@@ -1,0 +1,30 @@
+# UTF-8
+#
+# VS_VERSION_INFO resource for PyInstaller EXE.
+# Embedded as the file's version properties (right-click > Properties > Details).
+
+VSVersionInfo(
+  ffi=FixedFileInfo(
+    filevers=(4, 11, 0, 0),
+    prodvers=(4, 11, 0, 0),
+    mask=0x3f,
+    flags=0x0,
+    OS=0x40004,        # NT_WINDOWS32
+    fileType=0x1,      # VFT_APP
+  ),
+  kids=[
+    StringFileInfo([
+      StringTable('040904B0', [
+        StringStruct('CompanyName', 'Stavros Antoniou'),
+        StringStruct('FileDescription', 'SysPeek - System Information Viewer'),
+        StringStruct('FileVersion', '4.11.0.0'),
+        StringStruct('InternalName', 'SysPeek'),
+        StringStruct('LegalCopyright', 'Copyright (C) Stavros Antoniou'),
+        StringStruct('OriginalFilename', 'SysPeek.exe'),
+        StringStruct('ProductName', 'SysPeek'),
+        StringStruct('ProductVersion', '4.11.0.0'),
+      ])
+    ]),
+    VarFileInfo([VarStruct('Translation', [0x0409, 1200])])
+  ]
+)
