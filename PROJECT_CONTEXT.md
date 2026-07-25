@@ -108,9 +108,9 @@ SysPeek/
 │   ├── SA_WinTools.ps1               # PowerShell GUI entry point (not run by this app — superseded by the Tools tab)
 │   ├── SA_WinTools_Buttons.ps1       # All 20 button definitions + factory helpers (scripts ported into tools.py)
 │   ├── SA_WinTools_Lib.ps1           # Shared backend library (dot-sourced by Install/Uninstall tool scripts at runtime)
-│   ├── SA_WinTools_RegBackup/        # Registry backup output from Install/Uninstall Fix mode
-│   ├── project_context.md            # SA WinTools standalone docs
-│   └── roadmap.md                    # SA WinTools standalone roadmap
+│   ├── SA_Launcher.bat               # Standalone launcher (not used by SysPeek)
+│   ├── aistart.bat                   # Standalone launcher (not used by SysPeek)
+│   └── MicrosoftProgram_Install_and_Uninstall.meta.diagcab  # Microsoft troubleshooter (bundled for Install/Uninstall Fix tool)
 ├── roadmap.md            # Feature roadmap and version history
 └── PROJECT_CONTEXT.md    # This file
 ```

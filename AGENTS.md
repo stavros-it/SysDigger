@@ -160,6 +160,8 @@ The app must NOT call `_start_collection()` in `InfoWindow.__init__()`. Qt proce
 | `lhm_process.py` | ~310 | Portable LHM.exe process manager: downloads, launches hidden, loads PawnIO kernel driver for motherboard SuperIO sensors, cleans up on close |
 | `paths.py` | ~75 | Portable path resolution: `resource_dir()` (read-only bundled assets), `data_dir()` (writable per-user data with `%LOCALAPPDATA%` fallback), `cache_dir()`, `lib_dir()`, `lhm_standalone_dir()` |
 | `app_logger.py` | ~95 | Rotating file logger (with read-only location fallback to `%LOCALAPPDATA%\SysPeek\app.log`) |
+| `runtime_hook.py` | ~15 | PyInstaller runtime hook: `os.chdir(exe_dir)` + `QT_PLUGIN_PATH` |
+| `GITHUB_SIGNING_GUIDE.md` | ~580 | Step-by-step GitHub + SignPath free signing guide for non-developers |
 
 ## Page Index Map (gui.py PAGES tuple)
 
@@ -340,7 +342,41 @@ Build: `.\build.ps1` (installs deps, compile-checks, builds, signs)
 - **Path resolution**: `paths.py` distinguishes `resource_dir()` (read-only `sys._MEIPASS`) from `data_dir()` (writable exe dir or `%LOCALAPPDATA%\SysPeek` fallback)
 - **Runtime hook**: `runtime_hook.py` sets `os.chdir(exe_dir)` + `QT_PLUGIN_PATH`
 - **Signing**: Set `$env:SIGN_CERT_THUMBPRINT` and run `build.ps1` — signs all exe/dll with `signtool.exe` + RFC 3161 timestamp
-- **Cert recommendation**: Azure Trusted Signing (~$10/mo) or EV cert (immediate SmartScreen reputation)
+- **Cert recommendation**: Azure Trusted Signing (~$10/mo), EV cert (immediate SmartScreen reputation), or **SignPath Foundation** (free for open-source — see `GITHUB_SIGNING_GUIDE.md`)
+
+## GitHub Repository (v4.11)
+
+GitHub username: `stavros-it` (user ID: 151866740)
+Git identity: `Stavros Antoniou <151866740+stavros-it@users.noreply.github.com>` (noreply email)
+
+**State**: Initial commit created locally (`a53314f`, 74 files, 21,093 lines). Repo NOT yet created on GitHub — awaiting user to create `stavros-it/SysPeek` on github.com and push.
+
+**Files added for GitHub:**
+- `README.md` — front-page project description (features, requirements, download link, project structure, docs links, code signing policy, privacy policy)
+- `LICENSE` — MIT License
+- `.gitignore` — excludes runtime artifacts (`cache/`, `app.log`, `config.json`, `lib/lhm_standalone/`, `build/`, `dist/`, `__pycache__/`, `tools source/SA_WinTools_RegBackup/`)
+- `.github/workflows/build-and-sign.yml` — GitHub Actions workflow (build → zip → submit to SignPath if secrets set → upload to release; falls back to unsigned zip if SignPath not configured)
+- `GITHUB_SIGNING_GUIDE.md` — step-by-step guide for GitHub setup + SignPath free signing (written for non-developer)
+
+**Files removed (stale):**
+- `BUGS.md`, `IMPROVEMENTS.md` — merged into `bugsescalation.md` (stale duplicates)
+- `tools source/project_context.md`, `tools source/roadmap.md` — old SA WinTools docs (not referenced by code, were bloating the exe)
+- `Windows Info.7z` — old archive
+- `tools source/SA_WinTools_RegBackup/` — runtime artifact (created at runtime by Install/Uninstall Fix tool)
+
+**Committed to repo (must stay):**
+- `lib/` (12 DLLs, ~3 MB) — required for the build; `lhm_standalone/` excluded via `.gitignore` (downloaded at runtime)
+- `tools source/` (6 files) — `SA_WinTools_Lib.ps1` is referenced at runtime by `tools.py:43`; the `.diagcab` is bundled for the Install/Uninstall Fix tool
+- `icons/`, `app.ico`, `app_preview.png` — bundled into exe and shown in README
+
+**SignPath free signing workflow:**
+1. Apply at https://signpath.org/apply (requires public GitHub repo + MIT license)
+2. Set GitHub secrets: `SIGNPATH_API_TOKEN`, `SIGNPATH_ORG_ID`
+3. Publish a release (tag `v4.11` → push → draft release on GitHub)
+4. GitHub Actions builds → submits to SignPath → you approve at app.signpath.io → signed zip uploaded to release
+5. SmartScreen reputation builds over ~100 downloads (OV cert, not EV)
+
+See `GITHUB_SIGNING_GUIDE.md` for full step-by-step instructions.
 
 ## Critical Patterns (learned from audit)
 
