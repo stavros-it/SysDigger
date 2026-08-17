@@ -428,7 +428,7 @@ Start-Service 'Spooler' -EA 0
 Write-Output '[SUCCESS] Spooler reset completed.'
 """
 
-_INSTALL_SCAN = r""". "__LIB__"
+_INSTALL_SCAN = r""". '__LIB__'
 Write-Output '============================================================'
 Write-Output ' SA WinTools - Install/Uninstall SCAN (Read-Only)'
 Write-Output '============================================================'
@@ -453,8 +453,8 @@ else { Write-Output '  STATUS: HEALTHY - No repairable issues found.' }
 Write-Output '============================================================'
 """
 
-_INSTALL_FIX = r""". "__LIB__"
-$bkRoot = "__BACKUP__"
+_INSTALL_FIX = r""". '__LIB__'
+$bkRoot = '__BACKUP__'
 Write-Output '============================================================'
 Write-Output ' SA WinTools - Install/Uninstall REPAIR'
 Write-Output '============================================================'
@@ -572,7 +572,13 @@ try {
         $ssdDeviceNumbers = Get-Disk -EA SilentlyContinue | Where-Object { $_.IsSSD -or $_.MediaType -eq 'SSD' -or $_.Model -like '*SSD*' } | Select-Object -ExpandProperty Number -EA SilentlyContinue
     } else {
         $ssdDeviceNumbers = foreach ($s in $ssds) {
-            if ($s.DeviceId) { [int]$s.DeviceId } elseif ($s.DeviceNumber) { [int]$s.DeviceNumber } elseif ($s.Number) { [int]$s.Number }
+            $devId = $s.DeviceId
+            if ($devId -is [int]) { [int]$devId }
+            elseif ($s.DeviceNumber) { [int]$s.DeviceNumber }
+            elseif ($s.Number) { [int]$s.Number }
+            else {
+                try { [int]$devId } catch {}
+            }
         }
     }
 } catch { $ssdDeviceNumbers = $null }
@@ -813,7 +819,8 @@ Write-Output '============================================================'
 Write-Output " SA WinTools - Wi-Fi Password for: $profileName"
 Write-Output '============================================================'
 Write-Output ''
-netsh wlan show profile name="$profileName" key=clear 2>&1 | ForEach-Object { Write-Output $_ }
+$escName = $profileName -replace '"', '`"'
+netsh wlan show profile name="$escName" key=clear 2>&1 | ForEach-Object { Write-Output $_ }
 Write-Output '[SUCCESS] Wi-Fi password query completed.'
 Write-Output '============================================================'
 """
@@ -969,8 +976,13 @@ try {
             $issues += "Not valid Base64: $($_.Exception.Message)"
         }
 
-        $csvContent = [System.IO.File]::ReadAllText($path, [System.Text.Encoding]::Default)
-        $csvHash = ($csvContent -split "`r`n")[1].Split(',')[2]
+        $csvContent = [System.IO.File]::ReadAllText($path, [System.Text.Encoding]::UTF8)
+        $csvLines = $csvContent -split "`r`n"
+        if ($csvLines.Count -ge 2 -and $csvLines[1].Split(',').Count -ge 3) {
+            $csvHash = $csvLines[1].Split(',')[2]
+        } else {
+            $csvHash = ''
+        }
         if ($csvHash -ne $hash) {
             $valid = $false
             $issues += "CSV hash does not match WMI source hash"
@@ -1588,8 +1600,8 @@ Write-Output '[*] Current hibernation status:'
 $before = powercfg /a *>&1 | Out-String -Width 4096
 Write-Output $before
 Write-Output ''
-if ($before -match 'Hibernation has been disabled by the|Hibernation is not available|The following sleep states are not available') {
-    Write-Output '[INFO] Hibernation appears already disabled or unavailable.'
+if (-not (Test-Path "$env:SystemRoot\hiberfil.sys")) {
+    Write-Output '[INFO] Hibernation appears already disabled (hiberfil.sys absent).'
     Write-Output '============================================================'
     return
 }
@@ -1612,8 +1624,8 @@ Write-Output '[*] Current hibernation status:'
 $before = powercfg /a *>&1 | Out-String -Width 4096
 Write-Output $before
 Write-Output ''
-if ($before -match 'Hibernation Timeout|Standby \(S3\)|Hibernate -|^Hibernation ') {
-    Write-Output '[INFO] Hibernation appears already available.'
+if (Test-Path "$env:SystemRoot\hiberfil.sys") {
+    Write-Output '[INFO] Hibernation appears already available (hiberfil.sys present).'
     Write-Output '============================================================'
     return
 }
@@ -1756,7 +1768,7 @@ CATEGORIES: list[dict] = [
             {
                 "name": "Reset Spooler",
                 "desc": "Fixes print queue problems by restarting the print service.",
-                "modes": [{"label": "Stop / clear / start spooler", "script": _RESET_SPOOLER}],
+                "modes": [{"label": "Stop / clear / start spooler", "script": _RESET_SPOOLER, "confirm": True}],
             },
             {
                 "name": "Install/Uninstall",
@@ -1797,6 +1809,7 @@ CATEGORIES: list[dict] = [
                     "label": "Select drive & chkdsk mode...",
                     "script": _CHECK_HDD,
                     "input": {"type": "hdd_check"},
+                    "confirm": True,
                 }],
             },
             {
@@ -1804,7 +1817,7 @@ CATEGORIES: list[dict] = [
                 "desc": "Lists HID devices, removes problem entries, or resets Bluetooth adapters.",
                 "modes": [
                     {"label": "HID Device Services", "script": _HID_SERVICES},
-                    {"label": "Remove HID Errors", "script": _REMOVE_HID_ERRORS},
+                    {"label": "Remove HID Errors", "script": _REMOVE_HID_ERRORS, "confirm": True},
                     {"label": "Reset Bluetooth Adapter", "script": _BT_RESET, "confirm": True},
                 ],
             },
@@ -1893,7 +1906,7 @@ CATEGORIES: list[dict] = [
                 "desc": "Triggers a Windows Update scan or install on demand.",
                 "modes": [
                     {"label": "Start Scan", "script": _WU_SCAN},
-                    {"label": "Start Install", "script": _WU_INSTALL},
+                    {"label": "Start Install", "script": _WU_INSTALL, "confirm": True},
                 ],
             },
             {

@@ -197,3 +197,82 @@
 | 7. GUI Robustness | 0 ✅ | Medium |
 | 8. Code Deduplication | 0 ✅ | Low |
 | 9. Tools Page Accessibility | 0 ✅ | Low |
+
+---
+
+## v4.17 Audit (post-v4.14 follow-up)
+
+> Full codebase re-audit conducted after v4.14. Found 25 new items (2 High,
+> 14 Medium, 9 Low) across gui.py, collectors.py, and tools.py.
+
+### High
+
+| ID | Sev | Description | File(s) |
+|----|-----|-------------|---------|
+| A-01 | High | Bufferbloat streaming HTTP response (`_req.get(..., stream=True)`) never closed in `_run_bufferbloat_with_progress` — used `with` | gui.py:2917 |
+| A-02 | High | `_fetch_kb_title` HTTP response never closed — used `with` | collectors.py:2444 |
+| A-03 | High | `run_speed_test` Cloudflare meta lookup response never closed — used `with` | collectors.py:2748 |
+| A-04 | High | `run_speed_test` upload `requests.post()` Response discarded without `with`/`close()` — used `with` | collectors.py:2800 |
+| A-05 | High | `run_bufferbloat_test` upload `requests.post()` Response discarded — used `with` | collectors.py:2949 |
+| A-06 | High | `_TRIM_SSD` false-negative on non-numeric `Get-PhysicalDisk.DeviceId` (NVMe storage spaces) — added type check + try/catch fallback | tools.py:574 |
+| A-07 | High | `_CHECK_HDD` (chkdsk /f, /r) lacked `confirm=True` — added | tools.py:1796 |
+
+### Medium
+
+| ID | Sev | Description | File(s) |
+|----|-----|-------------|---------|
+| A-08 | Medium | `_make_card` ordering bug — `insertWidget(count-1)` scrambled card order on pages without trailing stretch (Speed Test, Network Adapters). Rewrote to insert before last stretch item, or append if no stretch | gui.py:1944 |
+| A-09 | Medium | Process tree dropped orphaned processes when any PPID was None — changed to always use comprehensive orphan scan | gui.py:5190 |
+| A-10 | Medium | PDH query state accessed without lock from two threads (`_read_amd_per_core_freqs`) — added `_pdh_lock` | collectors.py:959 |
+| A-11 | Medium | `_AUTOPILOT_HASH` UTF-8/Default encoding mismatch (wrote UTF-8, read Default) + fragile CSV parsing — fixed to read UTF-8 + bounds-check | tools.py:915,972 |
+| A-12 | Medium | `_WU_INSTALL` (Windows Update install) lacked `confirm=True` — added | tools.py:1896 |
+| A-13 | Medium | `_HIBERNATE_OFF`/`_HIBERNATE_ON` locale-dependent regex on `powercfg /a` output — replaced with `Test-Path hiberfil.sys` | tools.py:1591,1615 |
+| A-14 | Medium | `D3D11CreateDevice` COM objects could leak on `ArgumentError` (argtypes not set) — moved COM release to `finally` block, broadened `except` to `Exception` | collectors.py:3834 |
+| A-15 | Medium | `updates.sort` sorted `Installed On` as locale string, not chronological — added `_parse_date` with multiple format fallbacks | collectors.py:2429 |
+
+### Low
+
+| ID | Sev | Description | File(s) |
+|----|-----|-------------|---------|
+| A-16 | Low | `_on_sensor_refresh_tick` missing `_closing` guard — could create new QTimer after closeEvent, crash on deleted widget | gui.py:2412 |
+| A-17 | Low | `_on_tool_reboot` `subprocess.Popen(["shutdown",...])` not wrapped in try/except — added error handling | gui.py:4041 |
+| A-18 | Low | Missing `setSortingEnabled(True)` on 6 tables: Active Connections, Event Log (System + Application), BSOD History, Restore Points, Environment Variables, 5 device tables via `_make_device_table` — added to all | gui.py |
+| A-19 | Low | `_sensor_spark_data` retained stale sensor keys (not cleared in `_populate_sensors`) — added `.clear()` call | gui.py:4600 |
+| A-20 | Low | PDH query handle never closed on app exit — added `Collector.close()` method, called from `closeEvent` | collectors.py:969 |
+| A-21 | Low | `collect_ext_ip` HTTP responses (ipify + ipinfo) not closed with `with` — fixed | collectors.py:1822,1830 |
+| A-22 | Low | `_RESET_SPOOLER` lacked `confirm=True` (loses pending print jobs) — added | tools.py:1759 |
+| A-23 | Low | `_REMOVE_HID_ERRORS` lacked `confirm=True` — added for consistency | tools.py:1807 |
+| A-24 | Low | `_WIFI_PASSWORD` didn't escape `"` in profile name passed to netsh — added `-replace '"', '`"'` | tools.py:816 |
+| A-25 | Low | `_INSTALL_SCAN`/`_INSTALL_FIX` substituted `__LIB__`/`__BACKUP__` into double-quoted PowerShell strings — changed to single-quoted | tools.py:431,457 |
+
+### Dead code removed
+
+| ID | File(s) | Description |
+|----|---------|-------------|
+| A-26 | collectors.py:235 | `del conn` in `_wmi_namespace` `finally` was a no-op (only cleared local alias, not caller's reference) — replaced with `conn = None` + explanatory comment |
+| A-27 | collectors.py:295 | Dead `static_fields = {}` assignment (reassigned without being read) — removed |
+| A-28 | collectors.py:2358 | Redundant `except (FileNotFoundError, Exception)` (FileNotFoundError is subclass of Exception) — simplified to `except Exception` |
+
+### Patterns verified correct (not reported as issues)
+
+- `_SelBlackItem` / `_NumericItem` applied to all color-coded cells ✓
+- `_setup_table_copy` called right before `addWidget` on all tables ✓
+- `setSortingEnabled(True)` called AFTER population on tables that already had it ✓
+- Tab + scroll persistence applied to `_populate_network` and `_populate_processes` ✓
+- `_sensor_value_labels` + `_sensor_minmax` + `_sensor_sparklines` cleared at top of `_populate_sensors` and in `_on_refresh_clicked` ✓
+- `__INPUT__` single-quote escaping in `_collect_text_input` ✓
+- Defensive `.get()` used on all collector data access in populate methods ✓
+- No `QTimer.singleShot` from worker threads ✓
+- No mutable default arguments ✓
+- All `winreg.OpenKey` calls use `with` ✓
+- All event log handles use `try/finally` ✓
+- All ad-hoc WMI namespaces use `with self._wmi_namespace(...)` ✓
+- `_com_context()` pairs `CoInitialize`/`CoUninitialize` in `finally` ✓
+
+### Summary
+
+| Status | Count |
+|--------|-------|
+| **[FIXED]** | 28 (all items resolved) |
+| **[OPEN]** | 0 |
+| **Total** | 28 |

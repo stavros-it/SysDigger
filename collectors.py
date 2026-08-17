@@ -174,6 +174,7 @@ class Collector:
         self._pdh_query = None
         self._pdh_perf_counters: list = []
         self._pdh_base_freq: float = 0.0
+        self._pdh_lock = threading.Lock()
         self._kb_title_ttl = 7 * 24 * 3600  # 7 days
         self._lhm_process = None
 
@@ -232,7 +233,12 @@ class Collector:
                 conn = _wmi_mod.WMI(namespace=namespace)
                 yield conn
             finally:
-                del conn
+                # The caller's `as` variable still holds a reference; this
+                # only clears the local alias.  Callers must not retain the
+                # connection past the `with` block so COM pointers are
+                # released before CoUninitialize runs in _com_context's
+                # __exit__.
+                conn = None
 
     # -- Disk cache for static data ----------------------------------------- #
     def clear_cache(self) -> None:
@@ -292,7 +298,6 @@ class Collector:
         if cached_os:
             d.update(cached_os)
         else:
-            static_fields = {}
             if self._wmi_conn:
                 try:
                     for os_obj in self._wmi_conn.Win32_OperatingSystem():
@@ -818,6 +823,18 @@ class Collector:
                     except Exception:
                         pass
 
+    def close(self) -> None:
+        """Release cached resources (PDH query, etc.).  Called on app exit."""
+        with self._pdh_lock:
+            if self._pdh_query is not None:
+                try:
+                    import win32pdh
+                    win32pdh.CloseQuery(self._pdh_query)
+                except Exception:
+                    pass
+                self._pdh_query = None
+                self._pdh_perf_counters = []
+
     def _get_lhm_computer(self):
         """Get or create the persistent LHM Computer object."""
         if self._lhm_computer is not None:
@@ -954,55 +971,60 @@ class Collector:
             import win32pdh
         except ImportError:
             return []
+        # PDH query handles are not thread-safe — CollectQueryData and
+        # GetFormattedCounterValue on the same query from two threads
+        # (collect_hardware thread + 2s refresh_sensors timer) can corrupt
+        # internal state.  Guard with a lock.
         try:
-            # Reuse the cached PDH query if available (opened on first call).
-            query = self._pdh_query
-            counters = self._pdh_perf_counters
-            base_freq = self._pdh_base_freq
-            if query is None:
-                base_freq_info = psutil.cpu_freq()
-                if not base_freq_info or base_freq_info.current <= 0:
-                    return []
-                base_freq = float(base_freq_info.current)
-                self._pdh_base_freq = base_freq
+            with self._pdh_lock:
+                # Reuse the cached PDH query if available (opened on first call).
+                query = self._pdh_query
+                counters = self._pdh_perf_counters
+                base_freq = self._pdh_base_freq
+                if query is None:
+                    base_freq_info = psutil.cpu_freq()
+                    if not base_freq_info or base_freq_info.current <= 0:
+                        return []
+                    base_freq = float(base_freq_info.current)
+                    self._pdh_base_freq = base_freq
 
-                query = win32pdh.OpenQuery()
-                self._pdh_query = query
-                counters = []
-                n_logical = psutil.cpu_count(logical=True) or 1
-                n_physical = psutil.cpu_count(logical=False) or 1
-                # PDH instance format is "NUMA,Logical" — e.g. "0,0" through
-                # "0,15" for a 16-thread CPU.  We read one counter per
-                # PHYSICAL core (the first N logical threads map 1:1 to
-                # physical cores on AMD Zen SMT).
-                for i in range(n_physical):
-                    inst = f"0,{i}"
-                    path = (rf"\Processor Information({inst})"
-                            r"\% Processor Performance")
-                    try:
-                        c = win32pdh.AddEnglishCounter(query, path, 0)
-                        counters.append(c)
-                    except Exception:
-                        pass
-                self._pdh_perf_counters = counters
-                # Prime the counter with a first sample (rate-based counters
-                # need two samples before they return data).
+                    query = win32pdh.OpenQuery()
+                    self._pdh_query = query
+                    counters = []
+                    n_logical = psutil.cpu_count(logical=True) or 1
+                    n_physical = psutil.cpu_count(logical=False) or 1
+                    # PDH instance format is "NUMA,Logical" — e.g. "0,0" through
+                    # "0,15" for a 16-thread CPU.  We read one counter per
+                    # PHYSICAL core (the first N logical threads map 1:1 to
+                    # physical cores on AMD Zen SMT).
+                    for i in range(n_physical):
+                        inst = f"0,{i}"
+                        path = (rf"\Processor Information({inst})"
+                                r"\% Processor Performance")
+                        try:
+                            c = win32pdh.AddEnglishCounter(query, path, 0)
+                            counters.append(c)
+                        except Exception:
+                            pass
+                    self._pdh_perf_counters = counters
+                    # Prime the counter with a first sample (rate-based counters
+                    # need two samples before they return data).
+                    win32pdh.CollectQueryData(query)
+                # Second sample — this returns the actual value.
                 win32pdh.CollectQueryData(query)
-            # Second sample — this returns the actual value.
-            win32pdh.CollectQueryData(query)
-            freqs: list[float] = []
-            for c in counters:
-                try:
-                    val = win32pdh.GetFormattedCounterValue(
-                        c, win32pdh.PDH_FMT_DOUBLE)
-                    perf_pct = val[1]
-                    if perf_pct > 0:
-                        freqs.append(base_freq * perf_pct / 100.0)
-                    else:
+                freqs: list[float] = []
+                for c in counters:
+                    try:
+                        val = win32pdh.GetFormattedCounterValue(
+                            c, win32pdh.PDH_FMT_DOUBLE)
+                        perf_pct = val[1]
+                        if perf_pct > 0:
+                            freqs.append(base_freq * perf_pct / 100.0)
+                        else:
+                            freqs.append(base_freq)
+                    except Exception:
                         freqs.append(base_freq)
-                except Exception:
-                    freqs.append(base_freq)
-            return freqs
+                return freqs
         except Exception as e:
             logger.debug("PDH per-core freq read failed: %s", e)
             return []
@@ -1819,15 +1841,16 @@ class Collector:
     def collect_ext_ip(self) -> None:
         logger.info("Collecting external IP info")
         try:
-            resp = requests.get("https://api.ipify.org?format=text", timeout=10)
-            if resp.status_code != 200:
-                self.data.ext_ip_error = f"ipify returned HTTP {resp.status_code}"
-                return
-            ip = resp.text.strip()
+            with requests.get("https://api.ipify.org?format=text", timeout=10) as resp:
+                if resp.status_code != 200:
+                    self.data.ext_ip_error = f"ipify returned HTTP {resp.status_code}"
+                    return
+                ip = resp.text.strip()
             self.data.ext_ip_info = {"IP": ip}
             self.data.ext_ip_error = ""
             try:
-                geo = requests.get(f"https://ipinfo.io/{ip}/json", timeout=10).json()
+                with requests.get(f"https://ipinfo.io/{ip}/json", timeout=10) as geo_resp:
+                    geo = geo_resp.json()
                 self.data.ext_ip_info.update({
                     "ISP / Organization": geo.get("org", "N/A"),
                     "Country": geo.get("country", "N/A"),
@@ -2355,7 +2378,7 @@ class Collector:
                                         v, _ = winreg.QueryValueEx(
                                             subkey, value_name)
                                         return str(v).strip()
-                                    except (FileNotFoundError, Exception):
+                                    except Exception:
                                         return ""
                                 name = _q("DisplayName")
                                 if not name:
@@ -2426,7 +2449,20 @@ class Collector:
             except Exception as e:
                 logger.error("QuickFix WMI query failed: %s", e, exc_info=True)
 
-        updates.sort(key=lambda x: x.get("Installed On", ""), reverse=True)
+        def _parse_date(s: str):
+            """Parse a locale-formatted date string for chronological sorting."""
+            for fmt in ("%m/%d/%Y %H:%M", "%m/%d/%Y", "%Y-%m-%d %H:%M:%S",
+                        "%Y-%m-%d", "%d/%m/%Y"):
+                try:
+                    return datetime.datetime.strptime(s, fmt)
+                except ValueError:
+                    continue
+            return datetime.datetime.min
+
+        updates.sort(
+            key=lambda x: _parse_date(x.get("Installed On", "")),
+            reverse=True,
+        )
         self.data.update_history = updates
         self._cache_write("updates_static", updates)
 
@@ -2441,11 +2477,11 @@ class Collector:
             return ""
         try:
             url = f"https://support.microsoft.com/en-us/help/{kb_num}"
-            r = requests.get(url, timeout=5, allow_redirects=True)
-            if r.status_code != 200:
-                return ""
-            m = re.search(r"<title>(.*?)</title>", r.text,
-                          re.IGNORECASE | re.DOTALL)
+            with requests.get(url, timeout=5, allow_redirects=True) as r:
+                if r.status_code != 200:
+                    return ""
+                m = re.search(r"<title>(.*?)</title>", r.text,
+                              re.IGNORECASE | re.DOTALL)
             if m:
                 title = m.group(1).strip()
                 # Decode HTML entities
@@ -2745,19 +2781,19 @@ class Collector:
         colo = ""
         colo_location = ""
         try:
-            meta_resp = requests.get(
+            with requests.get(
                 "https://speed.cloudflare.com/meta", timeout=10,
-                headers=_cf_headers)
-            if meta_resp.status_code == 200:
-                meta = meta_resp.json()
-                colo = meta.get("colo", "")
-                if colo:
-                    result["server_colo"] = colo
-                    # Look up colo IATA code → city name
-                    colo_location = _CLOUDFLARE_COLOS.get(colo, colo)
-                    result["server_location"] = colo_location
-                    logger.info("Speed test: Cloudflare colo=%s (%s)",
-                                colo, colo_location)
+                headers=_cf_headers) as meta_resp:
+                if meta_resp.status_code == 200:
+                    meta = meta_resp.json()
+                    colo = meta.get("colo", "")
+                    if colo:
+                        result["server_colo"] = colo
+                        # Look up colo IATA code → city name
+                        colo_location = _CLOUDFLARE_COLOS.get(colo, colo)
+                        result["server_location"] = colo_location
+                        logger.info("Speed test: Cloudflare colo=%s (%s)",
+                                    colo, colo_location)
         except Exception as e:
             logger.debug("Cloudflare meta lookup failed: %s", e)
 
@@ -2797,8 +2833,9 @@ class Collector:
         try:
             data = b"0" * _ul_bytes
             start = time.time()
-            requests.post(upload_url, data=data, timeout=_timeout,
-                         headers=_cf_headers)
+            with requests.post(upload_url, data=data, timeout=_timeout,
+                               headers=_cf_headers):
+                pass
             elapsed = time.time() - start
             if elapsed > 0:
                 result["upload_mbps"] = round(
@@ -2946,8 +2983,9 @@ class Collector:
             ul_thread.start()
             try:
                 data = b"0" * _ul_bytes
-                requests.post(upload_url, data=data, timeout=_timeout,
-                             headers=_cf_headers)
+                with requests.post(upload_url, data=data, timeout=_timeout,
+                                   headers=_cf_headers):
+                    pass
             except Exception as e:
                 logger.debug("Bufferbloat upload load failed: %s", e)
             ul_thread.join(timeout=15)
@@ -3857,7 +3895,11 @@ class Collector:
                             supported.append(fl_name)
                     if supported:
                         result["Supported Feature Levels"] = ", ".join(supported)
-                # Release COM objects if created
+            except Exception as e:
+                logger.debug("D3D11 feature level check failed: %s", e)
+            finally:
+                # Release COM objects if created (always — even on error,
+                # since D3D11CreateDevice may have allocated before failing).
                 if dev_ptr.value:
                     try:
                         # IUnknown::Release is at vtable index 2
@@ -3877,8 +3919,6 @@ class Collector:
                         release()
                     except Exception:
                         pass
-            except (OSError, AttributeError) as e:
-                logger.debug("D3D11 feature level check failed: %s", e)
 
             # D3D12 runtime availability (check if d3d12.dll loads)
             try:

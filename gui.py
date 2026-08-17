@@ -1941,7 +1941,20 @@ class InfoWindow(QMainWindow):
                     page_idx, []
                 ).append(idx)
 
-        parent_layout.insertWidget(parent_layout.count() - 1, card)
+        # Insert before the last stretch in the layout (if any), so cards
+        # appear above a trailing stretch on pages that add one.  If there
+        # is no stretch (e.g. Speed Test page with interleaved buttons, or
+        # the Network Adapters tab), simply append — this avoids reversing
+        # card order or inserting cards between a button and its label.
+        inserted = False
+        for i in range(parent_layout.count() - 1, -1, -1):
+            item = parent_layout.itemAt(i)
+            if item is not None and item.spacerItem() is not None:
+                parent_layout.insertWidget(i, card)
+                inserted = True
+                break
+        if not inserted:
+            parent_layout.addWidget(card)
 
     @staticmethod
     def _extract_percentage(value: str) -> float | None:
@@ -2410,6 +2423,8 @@ class InfoWindow(QMainWindow):
             self._start_sensor_refresh()
 
     def _on_sensor_refresh_tick(self) -> None:
+        if self._closing:
+            return
         if self._sensor_refreshing:
             return
         self._sensor_refreshing = True
@@ -2914,11 +2929,11 @@ class InfoWindow(QMainWindow):
             _ua = {"User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                                   "AppleWebKit/537.36 (KHTML, like Gecko) "
                                   "Chrome/120.0.0.0 Safari/537.36")}
-            resp = _req.get(
+            with _req.get(
                 "https://speed.cloudflare.com/__down?bytes=99000000",
-                timeout=120, stream=True, headers=_ua)
-            for _ in resp.iter_content(chunk_size=65536):
-                pass
+                timeout=120, stream=True, headers=_ua) as resp:
+                for _ in resp.iter_content(chunk_size=65536):
+                    pass
         except Exception as e:
             logger.debug("Bufferbloat download load failed: %s", e)
         dl_thread.join(timeout=15)
@@ -2945,8 +2960,9 @@ class InfoWindow(QMainWindow):
             _ua = {"User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                                   "AppleWebKit/537.36 (KHTML, like Gecko) "
                                   "Chrome/120.0.0.0 Safari/537.36")}
-            _req.post("https://speed.cloudflare.com/__up",
-                      data=b"0" * 50_000_000, timeout=120, headers=_ua)
+            with _req.post("https://speed.cloudflare.com/__up",
+                           data=b"0" * 50_000_000, timeout=120, headers=_ua):
+                pass
         except Exception as e:
             logger.debug("Bufferbloat upload load failed: %s", e)
         ul_thread.join(timeout=15)
@@ -4038,10 +4054,17 @@ class InfoWindow(QMainWindow):
             QMessageBox.StandardButton.No,
         )
         if r == QMessageBox.StandardButton.Yes:
-            subprocess.Popen(
-                ["shutdown", "/r", "/f", "/t", "0"],
-                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-            )
+            try:
+                subprocess.Popen(
+                    ["shutdown", "/r", "/f", "/t", "0"],
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                )
+            except Exception as e:
+                logger.error("Failed to initiate reboot: %s", e, exc_info=True)
+                QMessageBox.warning(
+                    self, "Reboot Failed",
+                    f"Could not initiate reboot: {e}",
+                )
 
     def _confirm_tool(self, tool_name: str, mode_label: str) -> bool:
         r = QMessageBox.question(
@@ -4575,6 +4598,7 @@ class InfoWindow(QMainWindow):
         self._sensor_value_labels.clear()
         self._sensor_minmax.clear()
         self._sensor_sparklines.clear()
+        self._sensor_spark_data.clear()
         self._clear_layout(layout)
         self._pages[2].setVerticalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAlwaysOff
@@ -4856,6 +4880,7 @@ class InfoWindow(QMainWindow):
                 elif state in ("CLOSE_WAIT", "TIME_WAIT", "FIN_WAIT1",
                                "FIN_WAIT2", "CLOSING"):
                     state_item.setForeground(QColor(_RED))
+            conn_table.setSortingEnabled(True)
             hdr = conn_table.horizontalHeader()
             hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
             hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
@@ -5187,10 +5212,13 @@ class InfoWindow(QMainWindow):
                     parent_item.addChild(child_item)
                     _add_children(child_item, kid.get("PID"))
 
-            root_items = children_map.get(None, [])
-            if not root_items:
-                root_items = [p for p in procs if p.get("PPID") not in proc_by_pid]
-                root_items.sort(key=lambda x: x.get("Name", "").lower())
+            # Root items: processes whose PPID is None or whose PPID is
+            # not in the collected set (orphaned — e.g. PPID=0 for the
+            # System Idle Process, which psutil doesn't return).
+            root_items = [p for p in procs
+                          if p.get("PPID") is None
+                          or p.get("PPID") not in proc_by_pid]
+            root_items.sort(key=lambda x: x.get("Name", "").lower())
             for r in root_items:
                 top_item = _make_tree_item(r)
                 tree.addTopLevelItem(top_item)
@@ -5834,6 +5862,8 @@ class InfoWindow(QMainWindow):
                 item.setToolTip(str(val))
                 table.setItem(row, col, item)
 
+        table.setSortingEnabled(True)
+
         # Resize columns to fit content; horizontal scrollbar appears only
         # when content exceeds viewport width (e.g. long Device IDs)
         header = table.horizontalHeader()
@@ -5948,6 +5978,7 @@ class InfoWindow(QMainWindow):
                             item = QTableWidgetItem(str(val))
                         item.setToolTip(str(val))
                         table.setItem(row, col, item)
+                table.setSortingEnabled(True)
                 hdr = table.horizontalHeader()
                 hdr.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
                 hdr.setStretchLastSection(True)
@@ -6015,6 +6046,7 @@ class InfoWindow(QMainWindow):
                         item = QTableWidgetItem(str(val))
                     item.setToolTip(str(val))
                     bsod_table.setItem(i, col, item)
+            bsod_table.setSortingEnabled(True)
             hdr = bsod_table.horizontalHeader()
             hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
             hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
@@ -6077,6 +6109,7 @@ class InfoWindow(QMainWindow):
                 rp_table.setItem(i, 0, QTableWidgetItem(rp.get("Creation Time", "")))
                 rp_table.setItem(i, 1, QTableWidgetItem(rp.get("Description", "")))
                 rp_table.setItem(i, 2, QTableWidgetItem(rp.get("Sequence #", "")))
+            rp_table.setSortingEnabled(True)
             hdr = rp_table.horizontalHeader()
             hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
             hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
@@ -6109,6 +6142,7 @@ class InfoWindow(QMainWindow):
                 item_v.setToolTip(str(v))
                 env_table.setItem(i, 0, item_k)
                 env_table.setItem(i, 1, item_v)
+            env_table.setSortingEnabled(True)
             hdr = env_table.horizontalHeader()
             hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
             hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
@@ -6287,7 +6321,7 @@ class InfoWindow(QMainWindow):
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title)
 
-        ver = QLabel("Version 4.16")
+        ver = QLabel("Version 4.17")
         ver.setStyleSheet("font-size: 13px; font-weight: 600;")
         ver.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(ver)
@@ -6970,4 +7004,9 @@ class InfoWindow(QMainWindow):
             except Exception:
                 pass
             progress.close()
+        # Release cached PDH query handles (AMD per-core freq).
+        try:
+            self.collector.close()
+        except Exception:
+            pass
         super().closeEvent(event)

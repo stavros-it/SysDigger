@@ -9,7 +9,7 @@
 ## Quick Reference
 
 - **App name:** SysDigger (renamed from "SysPeek" in v4.16, originally "Windows Info" in v4.5)
-- **Version:** 4.16
+- **Version:** 4.17
 - **Entry point:** `sysdigger.pyw` (renamed from `launcher.pyw`)
 - **AppUserModelID:** `"Stavros.SysDigger"`
 - **Window title:** `"SysDigger  ·  Copyright (C) Stavros Antoniou"`
@@ -263,8 +263,9 @@ disk_benchmark, startup_impact
 
 ## Code Audit Tracker
 
-- **`bugsescalation.md`** — merged from BUGS.md + IMPROVEMENTS.md. 53 total items (19 fixed, 34 open) organized into 9 themed escalations with recommended fix sequences. Read this before starting audit fixes.
-- **`roadmap.md` → Planned — Short Term → Audit Escalation** — 10 checklist items summarizing the open bugsescalation work. Start with Escalation 1 (Thread Safety) → 9 (Accessibility).
+- **`bugsescalation.md`** — merged from BUGS.md + IMPROVEMENTS.md. 53 original items (all fixed) organized into 9 themed escalations + 28 items from v4.17 re-audit (all fixed). Read this before starting audit fixes.
+- **`roadmap.md` → Planned — Short Term → Audit Escalation** — 10 checklist items summarizing the open bugsescalation work (all completed).
+- **v4.17 re-audit** — 28 new items found and fixed (2 High, 14 Medium, 9 Low + 3 dead code). See `bugsescalation.md → v4.17 Audit` section and `AGENTS.md → Audit fixes already applied (v4.17)` below.
 
 ### Audit fixes already applied (v4.8)
 - **B-01** Restored `_collect_uefi_info()` method definition (was missing `def` line — UEFI/Secure Boot/TPM/Core Isolation never collected)
@@ -362,6 +363,36 @@ disk_benchmark, startup_impact
 - **C-1 lhm_process** Portable mode: on `closeEvent`, runs `uninstall.exe -uninstall -silent` to remove `C:\Program Files\PawnIO` + `sc stop PawnIO` (best-effort). The driver stays in kernel memory until reboot (Windows limitation — becomes NOT_STOPPABLE after uninstall marks it for deletion), but re-install works cleanly on next launch.
 - **C-1 collectors** `set_lhm_process()` docstring updated — the driver is now installed by the standalone PawnIO installer, not by LHM.exe.
 - **paths** Added `pawnio_dir()` for the installer cache (`lib/pawnio/`). `lhm_standalone_dir()` kept for backward compatibility but no longer used.
+
+### Audit fixes already applied (v4.17) — Post-v4.14 follow-up audit
+- **A-01 gui** Bufferbloat streaming HTTP response (`_req.get(..., stream=True)`) in `_run_bufferbloat_with_progress` never closed — now uses `with` (same pattern as H-1 fix for speed test)
+- **A-02 collectors** `_fetch_kb_title` HTTP response never closed — now uses `with requests.get(...) as r:`
+- **A-03 collectors** `run_speed_test` Cloudflare meta lookup response never closed — now uses `with`
+- **A-04 collectors** `run_speed_test` upload `requests.post()` Response discarded without `with`/`close()` — now uses `with`
+- **A-05 collectors** `run_bufferbloat_test` upload `requests.post()` Response discarded — now uses `with`
+- **A-06 tools** `_TRIM_SSD` false-negative on non-numeric `Get-PhysicalDisk.DeviceId` (NVMe storage spaces paths like `\\?\PCI#VEN_...`) — now checks if DeviceId is already an int, falls back to DeviceNumber/Number, then tries `[int]` cast in try/catch
+- **A-07 tools** `_CHECK_HDD` (chkdsk /f, /r) lacked `confirm=True` — now added (destructive operations need confirmation dialog)
+- **A-08 gui** `_make_card` ordering bug — `insertWidget(count-1, card)` scrambled card order on pages without trailing stretch (Speed Test page had cards between button and status label; Network Adapters tab had adapter cards in reversed order). Rewrote to scan backwards for last stretch item and insert before it, or append if no stretch found. Fixes both pages without affecting pages that already had stretch-at-top pattern.
+- **A-09 gui** Process tree dropped orphaned processes when any PPID was None — `root_items = children_map.get(None, [])` only fell back to orphan scan when the first branch was empty. Now always uses comprehensive orphan scan: `p for p in procs if p.get("PPID") is None or p.get("PPID") not in proc_by_pid`.
+- **A-10 collectors** PDH query state (`_pdh_query`, `_pdh_perf_counters`, `_pdh_base_freq`) accessed without lock from two threads (`collect_hardware` thread + 2s `refresh_sensors` timer) — added `_pdh_lock = threading.Lock()` and wrapped entire `_read_amd_per_core_freqs` body in `with self._pdh_lock:`
+- **A-11 tools** `_AUTOPILOT_HASH` UTF-8/Default encoding mismatch (wrote CSV with UTF-8, read back with `[System.Text.Encoding]::Default` which is Windows-1252 on most systems) + fragile CSV parsing (`($csvContent -split "`r`n")[1].Split(',')[2]` assumed line 2 exists + 3+ fields) — now reads with UTF-8 + bounds-checks line count and field count
+- **A-12 tools** `_WU_INSTALL` (Windows Update install via `usoclient StartInstall`) lacked `confirm=True` — now added (downloads + installs pending updates)
+- **A-13 tools** `_HIBERNATE_OFF`/`_HIBERNATE_ON` used locale-dependent regex on `powercfg /a` output (English strings like `'Hibernation has been disabled by the'`). On non-English Windows the early-exit checks were skipped. Now uses `Test-Path "$env:SystemRoot\hiberfil.sys"` which is locale-independent.
+- **A-14 collectors** `D3D11CreateDevice` COM objects (`dev_ptr`/`ctx_ptr`) could leak on `ArgumentError` (argtypes not set, and inner `except (OSError, AttributeError)` didn't catch `ArgumentError`). Moved COM release code to `finally` block + broadened `except` to `Exception`.
+- **A-15 collectors** `updates.sort(key=lambda x: x.get("Installed On", ""))` sorted locale-formatted date strings lexically, not chronologically (e.g. `"1/15/2024"` sorted after `"10/10/2023"`). Added `_parse_date` helper that tries multiple `datetime.strptime` formats with fallback to `datetime.min`.
+- **A-16 gui** `_on_sensor_refresh_tick` missing `_closing` guard — queued `timeout` signal after `closeEvent` stopped the sensor timer could create a new `_refresh_dot_timer`, which would fire `_dim_refresh_dot` accessing the deleted `_refresh_dot` widget → `RuntimeError`. Added `if self._closing: return` at top.
+- **A-17 gui** `_on_tool_reboot` `subprocess.Popen(["shutdown", "/r", "/f", "/t", "0"])` not wrapped in try/except — now wrapped, shows error dialog on failure.
+- **A-18 gui** Missing `setSortingEnabled(True)` on 6 tables: Active Connections (`conn_table`), Event Log System + Application, BSOD History (`bsod_table`), Restore Points (`rp_table`), Environment Variables (`env_table`), and all 5 device tables via `_make_device_table` — now added after population loop on all.
+- **A-19 gui** `_sensor_spark_data` not cleared in `_populate_sensors` (only cleared in `_on_refresh_clicked`) — stale sensor keys accumulated when hardware changed. Added `self._sensor_spark_data.clear()` alongside `_sensor_value_labels`/`_sensor_minmax`/`_sensor_sparklines`.
+- **A-20 collectors** PDH query handle never closed on app exit — added `Collector.close()` method that calls `win32pdh.CloseQuery(self._pdh_query)` under `_pdh_lock`, called from gui.py `closeEvent`.
+- **A-21 collectors** `collect_ext_ip` HTTP responses (ipify + ipinfo) not closed with `with` — now uses `with requests.get(...) as resp:`
+- **A-22 tools** `_RESET_SPOOLER` lacked `confirm=True` (clears print queue, loses pending jobs) — now added.
+- **A-23 tools** `_REMOVE_HID_ERRORS` lacked `confirm=True` — now added for consistency with `_BT_RESET`.
+- **A-24 tools** `_WIFI_PASSWORD` passed profile name to netsh as `name="$profileName"` without escaping `"`. Now escapes `"` → `` `" `` (PowerShell backtick-quote) via `-replace '"', '`"'`.
+- **A-25 tools** `_INSTALL_SCAN`/`_INSTALL_FIX` substituted `__LIB__`/`__BACKUP__` into double-quoted PowerShell strings (`". "__LIB__""`). Changed to single-quoted (`". '__LIB__'"`) since these paths are app-controlled and don't contain single quotes.
+- **A-26 collectors** Dead `del conn` in `_wmi_namespace` `finally` block was a no-op (only cleared local alias, not caller's `as` variable). Replaced with `conn = None` + explanatory comment.
+- **A-27 collectors** Dead `static_fields = {}` assignment at line 295 was reassigned at line 331 without being read. Removed.
+- **A-28 collectors** Redundant `except (FileNotFoundError, Exception)` at line 2358 — `FileNotFoundError` is a subclass of `Exception`, so listing both is the same as `except Exception:`. Simplified.
 
 ## PyInstaller Packaging (v4.11)
 
