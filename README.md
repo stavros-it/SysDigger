@@ -14,7 +14,9 @@ surfaces everything from CPU/GPU sensors and live network connections to BSOD hi
 and 27 integrated maintenance tools — all in a single dark-themed PySide6 window with
 live search, copy-to-clipboard, and JSON/Text/HTML export.
 
-![SysDigger](app_preview.png)
+<p align="center">
+  <img src="app_preview.png" alt="SysDigger" width="800">
+</p>
 
 ## Features
 
