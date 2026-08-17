@@ -1,6 +1,6 @@
-# SysPeek Build & Signing Guide
+# SysDigger Build & Signing Guide
 
-This guide walks you through building SysPeek as a signed Windows executable suitable for enterprise deployment.
+This guide walks you through building SysDigger as a signed Windows executable suitable for enterprise deployment.
 
 ---
 
@@ -21,7 +21,7 @@ python --version
 ### 2. Install dependencies
 
 ```pwsh
-cd "C:\path\to\SysPeek"
+cd "C:\path\to\SysDigger"
 python -m pip install -r requirements.txt
 ```
 
@@ -30,10 +30,10 @@ This installs: `psutil`, `requests`, `wmi`, `pywin32`, `pythonnet`, `PySide6`, `
 ### 3. Verify the app runs from source
 
 ```pwsh
-pythonw syspeek.pyw
+pythonw sysdigger.pyw
 ```
 
-You should see the SysPeek window with all pages populated. If it works, you're ready to build.
+You should see the SysDigger window with all pages populated. If it works, you're ready to build.
 
 ---
 
@@ -42,7 +42,7 @@ You should see the SysPeek window with all pages populated. If it works, you're 
 Use this if you just want to test the exe locally or distribute internally without a certificate.
 
 ```pwsh
-cd "C:\path\to\SysPeek"
+cd "C:\path\to\SysDigger"
 .\build.ps1
 ```
 
@@ -51,12 +51,12 @@ If PowerShell blocks the script:
 Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
 ```
 
-The build takes 2-5 minutes. Output is in `dist\SysPeek\`:
+The build takes 2-5 minutes. Output is in `dist\SysDigger\`:
 
 ```
 dist/
-└── SysPeek/
-    ├── SysPeek.exe          ← the main executable (run this)
+└── SysDigger/
+    ├── SysDigger.exe          ← the main executable (run this)
     ├── _internal/            ← DLLs, Python runtime, PySide6, etc.
     │   ├── lib/              ← LibreHardwareMonitorLib DLLs
     │   ├── icons/            ← nav + category icons
@@ -65,9 +65,9 @@ dist/
     └── ...
 ```
 
-**To run:** Double-click `SysPeek.exe` (or `dist\SysPeek\SysPeek.exe`). Windows will show a UAC prompt (admin required for sensors).
+**To run:** Double-click `SysDigger.exe` (or `dist\SysDigger\SysDigger.exe`). Windows will show a UAC prompt (admin required for sensors).
 
-**To distribute:** Zip the entire `dist\SysPeek\` folder. Users extract and run `SysPeek.exe`.
+**To distribute:** Zip the entire `dist\SysDigger\` folder. Users extract and run `SysDigger.exe`.
 
 > ⚠️ **Without signing, Windows SmartScreen will warn users** the first time they run the exe ("Windows protected your PC"). Users must click "More info" → "Run anyway". This is expected for unsigned exes.
 
@@ -91,7 +91,7 @@ You need a code signing certificate from a trusted Certificate Authority (CA). O
 
 **Recommended: Azure Trusted Signing** — cheapest paid option, no USB token, cloud-based signing.
 
-**Recommended (free): SignPath Foundation** — if you're willing to open-source SysPeek on GitHub. See Option C below.
+**Recommended (free): SignPath Foundation** — if you're willing to open-source SysDigger on GitHub. See Option C below.
 
 #### Azure Trusted Signing setup
 
@@ -105,7 +105,7 @@ You need a code signing certificate from a trusted Certificate Authority (CA). O
    - **App ID** (Client ID)
    - **Tenant ID**
    - **Client Secret**
-   - **Certificate name** (e.g. "SysPeek")
+   - **Certificate name** (e.g. "SysDigger")
 
 Install AzureSignTool:
 ```pwsh
@@ -141,7 +141,7 @@ $env:AZ_SIGN_ENDPOINT = "https://youraccount.eus.codesigning.azure.net/"
 $env:AZ_SIGN_APP_ID   = "your-app-id-guid"
 $env:AZ_SIGN_TENANT   = "your-tenant-id-guid"
 $env:AZ_SIGN_SECRET   = "your-client-secret"
-$env:AZ_SIGN_CERT     = "SysPeek"
+$env:AZ_SIGN_CERT     = "SysDigger"
 ```
 
 #### For traditional cert (DigiCert/SSL.com/Sectigo)
@@ -172,7 +172,7 @@ The included `build.ps1` uses `signtool.exe` (for traditional certs). For Azure 
 .\build.ps1
 
 # 2. Sign with AzureSignTool
-$files = Get-ChildItem -Recurse ".\dist\SysPeek" -Include *.exe, *.dll
+$files = Get-ChildItem -Recurse ".\dist\SysDigger" -Include *.exe, *.dll
 foreach ($f in $files) {
     Write-Host "Signing: $($f.Name)"
     azuresigntool sign `
@@ -199,13 +199,13 @@ $env:SIGN_CERT_THUMBPRINT = "your-thumbprint-here"
 
 ```pwsh
 # Check the main exe
-signtool verify /pa /v .\dist\SysPeek\SysPeek.exe
+signtool verify /pa /v .\dist\SysDigger\SysDigger.exe
 
 # Should output:
-# Successfully verified: ...SysPeek.exe
+# Successfully verified: ...SysDigger.exe
 ```
 
-You can also right-click `SysPeek.exe` → Properties → Digital Signatures tab to see the certificate.
+You can also right-click `SysDigger.exe` → Properties → Digital Signatures tab to see the certificate.
 
 ---
 
@@ -214,6 +214,13 @@ You can also right-click `SysPeek.exe` → Properties → Digital Signatures tab
 [SignPath Foundation](https://signpath.org/) provides **free code signing certificates** for open-source projects. The cert is issued to "SignPath Foundation" and signed binaries are verified as originating from your GitHub repository. No payment, no USB token, no recurring fees.
 
 ### Requirements (read carefully)
+
+> **NOTE:** SysDigger is now distributed under a **proprietary** license
+> (Copyright (c) 2026 Stavros Antoniou, All Rights Reserved). SignPath
+> Foundation free signing requires an OSI-approved open-source license,
+> so the free SignPath workflow described in this section is **not
+> available** for SysDigger. Use Azure Trusted Signing (~$10/mo) or an
+> OV/EV certificate instead. The text below is kept for reference only.
 
 SignPath Foundation is selective about which projects they accept. You must meet ALL of these:
 
@@ -228,7 +235,7 @@ SignPath Foundation is selective about which projects they accept. You must meet
 
 ### Step 1: Open-source your project on GitHub
 
-1. Create a GitHub repository for SysPeek (if not already done)
+1. Create a GitHub repository for SysDigger (if not already done)
 2. Add an OSI-approved license file (e.g., `LICENSE` with MIT or Apache 2.0)
 3. Add a `README.md` describing the project
 4. Make sure all code is committed (no proprietary/private code held back)
@@ -243,8 +250,8 @@ Add a "Code signing policy" section to your `README.md` or a `SIGNING.md` file:
 
 Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org)
 
-- **Committers and reviewers**: [Members team](https://github.com/YOUR_USERNAME/SysPeek/graphs/contributors)
-- **Approvers**: [Owners](https://github.com/YOUR_USERNAME/SysPeek)
+- **Committers and reviewers**: [Members team](https://github.com/YOUR_USERNAME/SysDigger/graphs/contributors)
+- **Approvers**: [Owners](https://github.com/YOUR_USERNAME/SysDigger)
 
 ### Privacy policy
 
@@ -257,8 +264,8 @@ Replace `YOUR_USERNAME` with your GitHub username.
 
 Go to https://signpath.org/apply and fill out the application:
 
-- **Project name**: SysPeek
-- **Repository URL**: https://github.com/YOUR_USERNAME/SysPeek
+- **Project name**: SysDigger
+- **Repository URL**: https://github.com/YOUR_USERNAME/SysDigger
 - **License**: MIT (or whatever you chose)
 - **Description**: Windows system information and diagnostics viewer
 - **Team members**: Your GitHub username(s)
@@ -270,8 +277,8 @@ Approval takes 1-2 weeks (manual review).
 Once approved, you'll get access to [SignPath.io](https://about.signpath.io):
 
 1. **Connect your GitHub repo** — SignPath integrates via a GitHub App that watches for releases
-2. **Configure artifact settings** — Tell SignPath which files to sign (`SysPeek.exe`, all DLLs in `_internal/`)
-3. **Set metadata restrictions** — Configure product name ("SysPeek") and version to be enforced on all signed files
+2. **Configure artifact settings** — Tell SignPath which files to sign (`SysDigger.exe`, all DLLs in `_internal/`)
+3. **Set metadata restrictions** — Configure product name ("SysDigger") and version to be enforced on all signed files
 4. **Define build pipeline** — SignPath can either:
    - **Option A**: Build automatically via GitHub Actions on every release tag, then sign automatically
    - **Option B**: You build locally, upload the artifacts, and manually request signing (requires approval by a designated team member)
@@ -312,7 +319,7 @@ jobs:
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
           organization-id: ${{ secrets.SIGNPATH_ORG_ID }}
-          project-slug: syspeek
+          project-slug: SysDigger
           signing-policy-slug: release-signing
           artifact-configuration-slug: release-config
           github-artifact-id: ${{ github.event.release.tag_name }}
@@ -322,7 +329,7 @@ jobs:
       - name: Upload to release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/signed/SysPeek-*.zip
+          files: dist/signed/SysDigger-*.zip
 ```
 
 Set these GitHub secrets (from your SignPath dashboard):
@@ -339,7 +346,7 @@ Once approved, SignPath signs the artifacts on their HSM and uploads them back t
 
 Download the signed release and verify:
 ```pwsh
-signtool verify /pa /v SysPeek.exe
+signtool verify /pa /v SysDigger.exe
 ```
 
 Should show:
@@ -347,7 +354,7 @@ Should show:
 Signing Certificate Chain:
     CN=SignPath Foundation
     ...
-Successfully verified: SysPeek.exe
+Successfully verified: SysDigger.exe
 ```
 
 ### SignPath limitations (be aware)
@@ -368,7 +375,7 @@ If you just want to test the signing flow locally (NOT for distributing to other
 # 1. Create a self-signed code signing cert
 $cert = New-SelfSignedCertificate `
     -Type CodeSigningCert `
-    -Subject "CN=SysPeek Dev" `
+    -Subject "CN=SysDigger Dev" `
     -CertStoreLocation "Cert:\CurrentUser\My" `
     -KeyAlgorithm RSA -KeyLength 2048 `
     -NotAfter (Get-Date).AddYears(1)
@@ -378,15 +385,15 @@ $cert = New-SelfSignedCertificate `
 
 # 3. Sign with your self-signed cert
 $thumb = $cert.Thumbprint
-Get-ChildItem -Recurse ".\dist\SysPeek" -Include *.exe, *.dll | ForEach-Object {
+Get-ChildItem -Recurse ".\dist\SysDigger" -Include *.exe, *.dll | ForEach-Object {
     signtool sign /fd sha256 /sha1 $thumb $_.FullName
 }
 
 # 4. (Optional) Make Windows trust your self-signed cert (dev machine only)
 # Add to Trusted Root CAs:
 $certPath = "Cert:\CurrentUser\My\$thumb"
-Export-Certificate -Cert $certPath -FilePath SysPeekDev.cer
-Import-Certificate -FilePath SysPeekDev.cer -CertStoreLocation "Cert:\LocalMachine\Root"
+Export-Certificate -Cert $certPath -FilePath SysDiggerDev.cer
+Import-Certificate -FilePath SysDiggerDev.cer -CertStoreLocation "Cert:\LocalMachine\Root"
 ```
 
 > ⚠️ **Self-signed certs are ONLY useful for testing on your own machine.** Other users will see "Unknown publisher" warnings. For public distribution, use SignPath (free, OSS) or a paid cert.
@@ -399,31 +406,31 @@ Import-Certificate -FilePath SysPeekDev.cer -CertStoreLocation "Cert:\LocalMachi
 
 ```pwsh
 Compress-Archive `
-    -Path .\dist\SysPeek\* `
-    -DestinationPath .\dist\SysPeek-4.11.zip `
+    -Path .\dist\SysDigger\* `
+    -DestinationPath .\dist\SysDigger-4.11.zip `
     -Force
 ```
 
-Distribute the zip. Users extract and run `SysPeek.exe`.
+Distribute the zip. Users extract and run `SysDigger.exe`.
 
 ### MSI installer (enterprise SCCM/Intune)
 
 For enterprise deployment via SCCM or Microsoft Intune, wrap the `--onedir` output in an MSI:
 
 1. Install WiX Toolset: https://wixtoolset.org/releases/
-2. Create `SysPeek.wxs` (WiX source file):
+2. Create `SysDigger.wxs` (WiX source file):
    ```xml
    <?xml version="1.0" encoding="UTF-8"?>
    <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
-     <Package Name="SysPeek" Version="4.11.0.0" Manufacturer="Stavros Antoniou"
+     <Package Name="SysDigger" Version="4.11.0.0" Manufacturer="Stavros Antoniou"
               Language="1033" Codepage="1252" UpgradeCode="YOUR-GUID-HERE">
        <MajorUpgrade DowngradeErrorMessage="A newer version is already installed." />
-       <Media Id="1" Cabinet="SysPeek.cab" EmbedCab="yes" />
+       <Media Id="1" Cabinet="SysDigger.cab" EmbedCab="yes" />
        <Directory Id="TARGETDIR" Name="SourceDir">
          <Directory Id="ProgramFilesFolder">
-           <Directory Id="INSTALLDIR" Name="SysPeek">
+           <Directory Id="INSTALLDIR" Name="SysDigger">
              <Component Id="MainFiles" Guid="*" KeyPath="yes">
-               <File Id="SysPeekExe" Source="dist\SysPeek\SysPeek.exe" />
+               <File Id="SysDiggerExe" Source="dist\SysDigger\SysDigger.exe" />
                <!-- Add all other files/dirs here, or use heat.exe -->
              </Component>
            </Directory>
@@ -437,12 +444,12 @@ For enterprise deployment via SCCM or Microsoft Intune, wrap the `--onedir` outp
    ```
 3. Build the MSI:
    ```pwsh
-   wix build SysPeek.wxs -o SysPeek-4.11.0.msi
+   wix build SysDigger.wxs -o SysDigger-4.11.0.msi
    ```
 4. Sign the MSI:
    ```pwsh
    signtool sign /fd sha256 /td sha256 /tr http://timestamp.digicert.com `
-       /sha1 $env:SIGN_CERT_THUMBPRINT SysPeek-4.11.0.msi
+       /sha1 $env:SIGN_CERT_THUMBPRINT SysDigger-4.11.0.msi
    ```
 
 Deploy via SCCM/Intune using the MSI.
@@ -457,11 +464,11 @@ Deploy via SCCM/Intune using the MSI.
 1. pip install -r requirements.txt      ← install/upgrade deps
 2. python -m py_compile ...             ← check for syntax errors
 3. Remove-Item build, dist               ← clean previous build
-4. pyinstaller syspeek.spec              ← build the exe
+4. pyinstaller sysdigger.spec              ← build the exe
 5. signtool sign (if cert available)    ← sign all exe/dll
 ```
 
-### `syspeek.spec` (PyInstaller config)
+### `sysdigger.spec` (PyInstaller config)
 
 | Setting | Value | Why |
 |---|---|---|
@@ -479,12 +486,12 @@ When running as a script, all paths resolve to the script directory.
 
 When frozen as exe:
 - **`resource_dir()`** → `sys._MEIPASS` (PyInstaller's temp extraction dir) — for read-only assets (icons, DLLs, PowerShell lib)
-- **`data_dir()`** → exe directory if writable, else `%LOCALAPPDATA%\SysPeek` — for writable data (config.json, app.log, cache/, LHM.exe download)
+- **`data_dir()`** → exe directory if writable, else `%LOCALAPPDATA%\SysDigger` — for writable data (config.json, app.log, cache/, LHM.exe download)
 
 This means the exe works from:
 - A USB stick (writable → portable mode)
-- `C:\Program Files\SysPeek\` (read-only → data goes to `%LOCALAPPDATA%\SysPeek`)
-- A network share (read-only → data goes to `%LOCALAPPDATA%\SysPeek`)
+- `C:\Program Files\SysDigger\` (read-only → data goes to `%LOCALAPPDATA%\SysDigger`)
+- A network share (read-only → data goes to `%LOCALAPPDATA%\SysDigger`)
 
 ### `runtime_hook.py`
 
@@ -577,7 +584,7 @@ OV certs build reputation over time (users click "Run anyway" → after ~100 dow
 
 ### Build + sign (free — SignPath for open source)
 ```pwsh
-# 1. Open-source SysPeek on GitHub
+# 1. Open-source SysDigger on GitHub
 # 2. Apply at https://signpath.org/apply
 # 3. Add .github/workflows/build-and-sign.yml (see Option C, Step 5)
 # 4. Tag a release: git tag v4.11 && git push --tags
@@ -605,10 +612,10 @@ $env:SIGN_CERT_THUMBPRINT = "your-thumbprint"
 
 ### Verify signature
 ```pwsh
-signtool verify /pa /v .\dist\SysPeek\SysPeek.exe
+signtool verify /pa /v .\dist\SysDigger\SysDigger.exe
 ```
 
 ### Test the built exe
 ```pwsh
-.\dist\SysPeek\SysPeek.exe
+.\dist\SysDigger\SysDigger.exe
 ```

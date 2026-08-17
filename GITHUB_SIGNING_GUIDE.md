@@ -1,6 +1,6 @@
-# GitHub + SignPath Guide for SysPeek
+# GitHub + SignPath Guide for SysDigger
 
-A step-by-step guide for putting SysPeek on GitHub and getting it signed for free — written for someone who's comfortable with computers but new to Git/GitHub.
+A step-by-step guide for putting SysDigger on GitHub and getting it signed for free — written for someone who's comfortable with computers but new to Git/GitHub.
 
 ---
 
@@ -58,7 +58,7 @@ git config --global init.defaultBranch main
 1. Log in to https://github.com
 2. Click the **+** icon (top-right) → **New repository**
 3. Fill in:
-   - **Repository name**: `SysPeek`
+   - **Repository name**: `SysDigger`
    - **Description**: `Windows system information and diagnostics viewer`
    - **Visibility**: Public (SignPath requires this — they only sign open-source projects)
    - **DO NOT** check "Add a README file" (we'll add one from your computer)
@@ -67,31 +67,34 @@ git config --global init.defaultBranch main
 
 GitHub shows you a page with instructions. Leave it open — we'll come back to it.
 
-### Step 2.2: Create a LICENSE file
+### Step 2.2: LICENSE file (already created — proprietary)
 
-Your code needs an open-source license for SignPath to accept it.
+The `LICENSE` file in your SysDigger folder is already created with a
+**proprietary** license (Copyright (c) 2026 Stavros Antoniou, All Rights
+Reserved). No action needed here.
 
-1. In your SysPeek folder on your computer, create a file called `LICENSE` (no extension)
-2. Go to https://opensource.org/licenses/MIT
-3. Copy the full MIT License text
-4. Paste it into the `LICENSE` file
-5. Replace `[year]` with `2026` and `[fullname]` with `Stavros Antoniou`
-
-It should look like:
-```
-MIT License
-
-Copyright (c) 2026 Stavros Antoniou
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-...
-```
+> **Important:** SignPath free signing requires an OSI-approved
+> open-source license (MIT, Apache 2.0, etc.). Since the app is now
+> proprietary, **SignPath free signing is NOT available**. Use one of the
+> paid alternatives below:
+> - **Azure Trusted Signing** (~$10/month) — Microsoft's managed signing
+>   service, integrated with `signtool.exe` via the Trusted Signing
+>   action
+> - **OV (Organization Validation) certificate** (~$200/year from
+>   DigiCert/Sectigo) — standard code signing cert; SmartScreen
+>   reputation builds over ~100 downloads
+> - **EV (Extended Validation) certificate** (~$400/year) — immediate
+>   SmartScreen reputation; requires a hardware token
+>
+> The rest of this guide (GitHub repo setup, push workflow) still applies.
+> Skip the SignPath-specific Parts 6 onwards and use the Azure Trusted
+> Signing action in your workflow instead.
 
 ### Step 2.3: Create a .gitignore file
 
 This tells Git which files NOT to upload (build output, temp files, caches):
 
-Create a file called `.gitignore` (note the dot at the start) in your SysPeek folder with this content:
+Create a file called `.gitignore` (note the dot at the start) in your SysDigger folder with this content:
 
 ```
 # Build output
@@ -126,10 +129,10 @@ desktop.ini
 
 ### Step 2.4: Create a README.md
 
-If you don't have one, create `README.md` in your SysPeek folder. This is the front page of your GitHub repo. Keep it simple:
+If you don't have one, create `README.md` in your SysDigger folder. This is the front page of your GitHub repo. Keep it simple:
 
 ```markdown
-# SysPeek
+# SysDigger
 
 Windows system information and diagnostics viewer.
 
@@ -142,7 +145,7 @@ Windows system information and diagnostics viewer.
 - Processes (list + tree view)
 - Devices (USB, Bluetooth, printers, audio)
 - Diagnostics (event logs, BSOD history, DirectX, restore points)
-- 26 maintenance tools (disk cleanup, SFC/DISM, hosts editor, etc.)
+- 27 maintenance tools (disk cleanup, SFC/DISM, hosts editor, etc.)
 
 ## Requirements
 
@@ -171,7 +174,8 @@ This program will not transfer any information to other networked systems unless
 
 ## License
 
-MIT License — see [LICENSE](LICENSE)
+Proprietary — Copyright (c) 2026 Stavros Antoniou. All rights reserved.
+See [LICENSE](LICENSE) for details.
 ```
 
 Replace `StavrosAntoniou` with your actual GitHub username.
@@ -182,10 +186,10 @@ Replace `StavrosAntoniou` with your actual GitHub username.
 
 This is the core "Git workflow." You'll do this sequence every time you want to update your code.
 
-### Step 3.1: Open PowerShell in your SysPeek folder
+### Step 3.1: Open PowerShell in your SysDigger folder
 
 ```pwsh
-cd "C:\Users\Stavros\OneDrive\My AI Apps\SysPeek"
+cd "C:\Users\Stavros\OneDrive\My AI Apps\SysDigger"
 ```
 
 ### Step 3.2: Initialize the Git repository
@@ -227,7 +231,7 @@ git status
 This creates a permanent snapshot of your code with a message:
 
 ```pwsh
-git commit -m "Initial commit — SysPeek v4.11"
+git commit -m "Initial commit — SysDigger v4.11"
 ```
 
 ### Step 3.6: Connect to your GitHub repo
@@ -235,12 +239,12 @@ git commit -m "Initial commit — SysPeek v4.11"
 Tell Git where to upload (replace `YOUR_USERNAME` with your GitHub username):
 
 ```pwsh
-git remote add origin https://github.com/YOUR_USERNAME/SysPeek.git
+git remote add origin https://github.com/YOUR_USERNAME/SysDigger.git
 ```
 
 If you get an error "remote origin already exists":
 ```pwsh
-git remote set-url origin https://github.com/YOUR_USERNAME/SysPeek.git
+git remote set-url origin https://github.com/YOUR_USERNAME/SysDigger.git
 ```
 
 ### Step 3.7: Upload to GitHub
@@ -262,7 +266,7 @@ If `git push` asked for a password and failed:
 1. Go to https://github.com/settings/tokens
 2. Click **Generate new token** → **Generate new token (classic)**
 3. Fill in:
-   - **Note**: `SysPeek push access`
+   - **Note**: `SysDigger push access`
    - **Expiration**: 90 days (or whatever you prefer)
    - **Scopes**: check `repo` (full repository access)
 4. Click **Generate token**
@@ -278,7 +282,7 @@ Windows Credential Manager will remember the token, so you only do this once.
 
 ### Step 3.9: Verify it worked
 
-Go to https://github.com/YOUR_USERNAME/SysPeek — you should see all your files, the README displayed on the front page, and the LICENSE file.
+Go to https://github.com/YOUR_USERNAME/SysDigger — you should see all your files, the README displayed on the front page, and the LICENSE file.
 
 ---
 
@@ -336,10 +340,10 @@ SignPath provides free code signing for open-source projects. This is the "free 
 
 1. Go to https://signpath.org/apply
 2. Fill in:
-   - **Project name**: SysPeek
-   - **Repository URL**: `https://github.com/YOUR_USERNAME/SysPeek`
+   - **Project name**: SysDigger
+   - **Repository URL**: `https://github.com/YOUR_USERNAME/SysDigger`
    - **License**: MIT
-   - **Description**: Windows system information and diagnostics viewer with 26 maintenance tools. Built with Python/PySide6. Uses LibreHardwareMonitorLib for sensor data.
+   - **Description**: Windows system information and diagnostics viewer with 27 maintenance tools. Built with Python/PySide6. Uses LibreHardwareMonitorLib for sensor data.
    - **Your role**: Maintainer
 3. Submit and wait 1-2 weeks for review
 
@@ -373,9 +377,9 @@ You'll get an email from SignPath with a link to create your account. Log in at 
 1. In SignPath, go to **Organizations** → select your organization
 2. Go to **Projects** → **Add Project**
 3. Fill in:
-   - **Project name**: SysPeek
+   - **Project name**: SysDigger
    - **Source control system**: GitHub
-   - **Repository**: `YOUR_USERNAME/SysPeek`
+   - **Repository**: `YOUR_USERNAME/SysDigger`
 4. Authorize the SignPath GitHub App (a popup will ask you to grant access)
 5. Click **Create project**
 
@@ -386,11 +390,11 @@ Tell SignPath which files to sign:
 1. Go to your project → **Artifact Configurations** → **Add**
 2. Name it `release-config`
 3. Under **Files to sign**, add:
-   - `SysPeek.exe`
+   - `SysDigger.exe`
    - `_internal\*.exe`
    - `_internal\*.dll`
 4. Under **Metadata restrictions** (SignPath requires these):
-   - Product name: `SysPeek` (enforced — all signed files must report this product name)
+   - Product name: `SysDigger` (enforced — all signed files must report this product name)
    - Product version: leave as "from file" (uses the version from `version.txt`)
 5. Save
 
@@ -417,11 +421,11 @@ You'll need these for the GitHub Action:
 
 ## Part 7: Set up GitHub Actions (automatic build + sign)
 
-GitHub Actions is a CI/CD service that runs scripts on GitHub's servers. We'll create a workflow that builds SysPeek and asks SignPath to sign it, every time you publish a release.
+GitHub Actions is a CI/CD service that runs scripts on GitHub's servers. We'll create a workflow that builds SysDigger and asks SignPath to sign it, every time you publish a release.
 
 ### Step 7.1: Add secrets to your GitHub repo
 
-1. Go to https://github.com/YOUR_USERNAME/SysPeek/settings/secrets/actions
+1. Go to https://github.com/YOUR_USERNAME/SysDigger/settings/secrets/actions
 2. Click **New repository secret**
 3. Add two secrets:
 
@@ -435,9 +439,9 @@ GitHub Actions is a CI/CD service that runs scripts on GitHub's servers. We'll c
 
 ### Step 7.2: Create the workflow file
 
-In your SysPeek folder, create this directory structure:
+In your SysDigger folder, create this directory structure:
 ```
-SysPeek/
+SysDigger/
 └── .github/
     └── workflows/
         └── build-and-sign.yml
@@ -474,15 +478,15 @@ jobs:
           pip install -r requirements.txt
 
       - name: Compile check
-        run: python -m py_compile app.py gui.py collectors.py syspeek.pyw tools.py sensors.py helpers.py config.py lhm_process.py updater.py app_logger.py paths.py
+        run: python -m py_compile app.py gui.py collectors.py sysdigger.pyw tools.py sensors.py helpers.py config.py lhm_process.py updater.py app_logger.py paths.py
 
       - name: Build with PyInstaller
-        run: pyinstaller syspeek.spec --noconfirm --clean
+        run: pyinstaller sysdigger.spec --noconfirm --clean
 
       - name: Zip the build
         run: |
           cd dist
-          Compress-Archive -Path SysPeek\* -DestinationPath ..\SysPeek-${{ github.event.release.tag_name }}.zip
+          Compress-Archive -Path SysDigger\* -DestinationPath ..\SysDigger-${{ github.event.release.tag_name }}.zip
           cd ..
 
       - name: Submit to SignPath for signing
@@ -491,7 +495,7 @@ jobs:
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
           organization-id: ${{ secrets.SIGNPATH_ORG_ID }}
-          project-slug: syspeek
+          project-slug: SysDigger
           signing-policy-slug: release-signing
           artifact-configuration-slug: release-config
           github-artifact-id: ${{ github.event.release.tag_name }}
@@ -501,19 +505,19 @@ jobs:
       - name: Upload signed zip to release
         uses: softprops/action-gh-release@v2
         with:
-          files: signed/SysPeek-${{ github.event.release.tag_name }}.zip
+          files: signed/SysDigger-${{ github.event.release.tag_name }}.zip
 
       - name: Upload unsigned zip (fallback)
         if: failure()
         uses: softprops/action-gh-release@v2
         with:
-          files: SysPeek-${{ github.event.release.tag_name }}.zip
+          files: SysDigger-${{ github.event.release.tag_name }}.zip
 ```
 
 ### Step 7.3: Upload the workflow to GitHub
 
 ```pwsh
-cd "C:\Users\Stavros\OneDrive\My AI Apps\SysPeek"
+cd "C:\Users\Stavros\OneDrive\My AI Apps\SysDigger"
 git add .
 git commit -m "Add GitHub Actions build-and-sign workflow"
 git push
@@ -521,7 +525,7 @@ git push
 
 ### Step 7.4: Verify the workflow appears on GitHub
 
-Go to https://github.com/YOUR_USERNAME/SysPeek/actions — you should see "Build and Sign" listed as a workflow. It won't run yet (it only runs when you publish a release).
+Go to https://github.com/YOUR_USERNAME/SysDigger/actions — you should see "Build and Sign" listed as a workflow. It won't run yet (it only runs when you publish a release).
 
 ---
 
@@ -533,17 +537,17 @@ This triggers the build + sign pipeline.
 
 In PowerShell:
 ```pwsh
-cd "C:\Users\Stavros\OneDrive\My AI Apps\SysPeek"
+cd "C:\Users\Stavros\OneDrive\My AI Apps\SysDigger"
 git tag v4.11
 git push origin v4.11
 ```
 
 ### Step 8.2: Create the release on GitHub
 
-1. Go to https://github.com/YOUR_USERNAME/SysPeek/releases
+1. Go to https://github.com/YOUR_USERNAME/SysDigger/releases
 2. Click **Draft a new release**
 3. **Choose a tag**: select `v4.11` (or type it if it doesn't appear)
-4. **Release title**: `SysPeek v4.11`
+4. **Release title**: `SysDigger v4.11`
 5. **Description**: Copy the version history from `roadmap.md`:
    ```
    ## What's New in v4.11
@@ -559,7 +563,7 @@ git push origin v4.11
 
 ### Step 8.3: Watch the build
 
-1. Go to https://github.com/YOUR_USERNAME/SysPeek/actions
+1. Go to https://github.com/YOUR_USERNAME/SysDigger/actions
 2. You'll see a new run titled "Build and Sign"
 3. Click it to watch the progress:
    - Checkout code ✓
@@ -579,7 +583,7 @@ When the workflow reaches "Submit to SignPath," you'll get an email from SignPat
 1. Click the link in the email
 2. Log in to https://app.signpath.io/
 3. Review the signing request:
-   - Check the project name: SysPeek
+   - Check the project name: SysDigger
    - Check the files to be signed
    - Check the source commit hash (verifies it matches your GitHub repo)
 4. Click **Approve**
@@ -588,15 +592,15 @@ The signing takes 1-2 minutes. SignPath signs on their HSM and uploads the signe
 
 ### Step 8.5: Download the signed release
 
-1. Go to https://github.com/YOUR_USERNAME/SysPeek/releases
-2. You'll see `SysPeek-v4.11.zip` attached to the release
-3. Download it, extract, and run `SysPeek.exe`
+1. Go to https://github.com/YOUR_USERNAME/SysDigger/releases
+2. You'll see `SysDigger-v4.11.zip` attached to the release
+3. Download it, extract, and run `SysDigger.exe`
 4. Windows should show "Verified publisher: SignPath Foundation" (no SmartScreen warning after reputation builds up)
 
 ### Step 8.6: Verify the signature
 
 ```pwsh
-signtool verify /pa /v SysPeek.exe
+signtool verify /pa /v SysDigger.exe
 ```
 
 Should output:
@@ -604,7 +608,7 @@ Should output:
 Signing Certificate Chain:
     CN=SignPath Foundation
     ...
-Successfully verified: SysPeek.exe
+Successfully verified: SysDigger.exe
 ```
 
 ---
@@ -647,7 +651,7 @@ git push origin v4.12
 Then on GitHub:
 1. Go to Releases → Draft a new release
 2. Select tag `v4.12`
-3. Title: `SysPeek v4.12`
+3. Title: `SysDigger v4.12`
 4. Describe changes
 5. Publish release
 
@@ -680,7 +684,7 @@ Check the build log — click the failed step to see the error. Common causes:
 
 ### GitHub Actions build fails at "Build with PyInstaller"
 
-Check if `syspeek.spec` is valid. Common issues:
+Check if `sysdigger.spec` is valid. Common issues:
 - Path to `app.ico` not found (the icon must be in the repo)
 - `lib/` directory not committed (but it should be — the DLLs need to be in the repo for the build to work)
 
@@ -699,7 +703,7 @@ git push
 
 Check the SignPath dashboard for the error. Common causes:
 - Artifact configuration doesn't match (file paths wrong)
-- Metadata restriction failed (product name in exe doesn't match "SysPeek")
+- Metadata restriction failed (product name in exe doesn't match "SysDigger")
 - You tried to sign a binary that wasn't built from the verified source code
 
 ### The signed exe still shows SmartScreen warning

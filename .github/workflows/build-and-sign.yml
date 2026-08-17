@@ -29,18 +29,18 @@ jobs:
       - name: Compile check
         run: |
           python -m py_compile `
-            app.py gui.py collectors.py syspeek.pyw tools.py `
+            app.py gui.py collectors.py sysdigger.pyw tools.py `
             sensors.py helpers.py config.py lhm_process.py `
             updater.py app_logger.py paths.py
 
       - name: Build with PyInstaller
-        run: pyinstaller syspeek.spec --noconfirm --clean
+        run: pyinstaller sysdigger.spec --noconfirm --clean
 
       - name: Zip the build
         run: |
           $tag = "${{ github.event.release.tag_name }}"
           if (-not $tag) { $tag = "dev" }
-          Compress-Archive -Path dist\SysPeek\* -DestinationPath "SysPeek-$tag.zip"
+          Compress-Archive -Path dist\SysDigger\* -DestinationPath "SysDigger-$tag.zip"
 
       - name: Submit to SignPath for signing
         id: signpath
@@ -49,7 +49,7 @@ jobs:
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
           organization-id: ${{ secrets.SIGNPATH_ORG_ID }}
-          project-slug: syspeek
+          project-slug: SysDigger
           signing-policy-slug: release-signing
           artifact-configuration-slug: release-config
           github-artifact-id: ${{ github.event.release.tag_name }}
@@ -60,10 +60,10 @@ jobs:
         if: steps.signpath.outcome == 'success'
         uses: softprops/action-gh-release@v2
         with:
-          files: signed/SysPeek-*.zip
+          files: signed/SysDigger-*.zip
 
       - name: Upload unsigned zip to release
         if: steps.signpath.outcome != 'success'
         uses: softprops/action-gh-release@v2
         with:
-          files: SysPeek-*.zip
+          files: SysDigger-*.zip

@@ -33,6 +33,20 @@ LHM_NEEDED_DLLS = (
     "Microsoft.Bcl.HashCode.dll",
     "DiskInfoToolkit.dll",
     "BlackSharp.Core.dll",
+    # The following DLLs are transitive dependencies of
+    # LibreHardwareMonitorLib.dll.  Without them, Computer.Open() fails
+    # to load or silently skips sensors.
+    "System.Security.AccessControl.dll",
+    "System.Security.Principal.Windows.dll",
+    "System.Threading.AccessControl.dll",
+    "System.Reflection.Metadata.dll",
+    "System.Collections.Immutable.dll",
+    "System.Resources.Extensions.dll",
+    "System.CodeDom.dll",
+    "System.Formats.Nrbf.dll",
+    "System.IO.Pipelines.dll",
+    "System.Text.Encodings.Web.dll",
+    "System.Text.Json.dll",
 )
 
 
@@ -57,7 +71,7 @@ class LibraryUpdater:
         """Read the version from a version.txt file in lib/, or 'unknown'."""
         vf = os.path.join(self.lib_dir, "version.txt")
         try:
-            with open(vf, "r") as f:
+            with open(vf, "r", encoding="utf-8") as f:
                 return f.read().strip() or "unknown"
         except Exception:
             return "unknown"
@@ -77,20 +91,22 @@ class LibraryUpdater:
         return ""
 
     def _download_zip(self, url: str) -> bytes:
-        resp = requests.get(url, timeout=120, stream=True)
-        resp.raise_for_status()
-        buf = io.BytesIO()
-        total = int(resp.headers.get("content-length", 0))
-        downloaded = 0
-        for chunk in resp.iter_content(chunk_size=65536):
-            buf.write(chunk)
-            downloaded += len(chunk)
-            if total > 0:
-                pct = downloaded * 100 // total
-                self.signals.status.emit(
-                    f"Downloading... {pct}% ({downloaded // 1024} KB)", "info"
-                )
-        return buf.getvalue()
+        # 'with' ensures the streaming response is always closed so the
+        # connection returns to the pool (H-1 pattern, applied here too).
+        with requests.get(url, timeout=120, stream=True) as resp:
+            resp.raise_for_status()
+            buf = io.BytesIO()
+            total = int(resp.headers.get("content-length", 0))
+            downloaded = 0
+            for chunk in resp.iter_content(chunk_size=65536):
+                buf.write(chunk)
+                downloaded += len(chunk)
+                if total > 0:
+                    pct = downloaded * 100 // total
+                    self.signals.status.emit(
+                        f"Downloading... {pct}% ({downloaded // 1024} KB)", "info"
+                    )
+            return buf.getvalue()
 
     def _extract_dlls(self, zip_bytes: bytes) -> dict[str, bytes]:
         result: dict[str, bytes] = {}
@@ -166,8 +182,14 @@ class LibraryUpdater:
                         f"Warning: could not write {dll_name}: {e}", "error"
                     )
 
-            with open(os.path.join(self.lib_dir, "version.txt"), "w") as f:
-                f.write(latest_version)
+            # Only persist the version marker if at least one DLL was
+            # actually written.  Otherwise is_up_to_date() would report
+            # "already up to date" on the next launch even though the DLLs
+            # on disk are stale.
+            if written > 0:
+                with open(os.path.join(self.lib_dir, "version.txt"),
+                          "w", encoding="utf-8") as f:
+                    f.write(latest_version)
 
             logger.info("Library update complete: v%s (%d DLLs)", latest_version, written)
             self.signals.finished.emit(

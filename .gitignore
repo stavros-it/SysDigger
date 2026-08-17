@@ -17,8 +17,9 @@ cache/
 energy-report.html
 battery-report.html
 
-# LHM.exe downloaded at runtime (the DLLs in lib/ ARE committed)
+# LHM.exe / PawnIO installer downloaded at runtime (the DLLs in lib/ ARE committed)
 lib/lhm_standalone/
+lib/pawnio/
 
 # RegBackup created by Install/Uninstall Fix tool
 tools source/SA_WinTools_RegBackup/

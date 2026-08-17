@@ -33,8 +33,11 @@ from __future__ import annotations
 
 import os
 
-# Directory containing this file (the app root).
-_APP_DIR = os.path.dirname(os.path.abspath(__file__))
+from paths import resource_dir
+
+# Directory containing read-only bundled resources (the app root when
+# running as a script, sys._MEIPASS when frozen with PyInstaller).
+_APP_DIR = resource_dir()
 
 # The shared PowerShell library used by the Install/Uninstall tools.
 LIB_PATH = os.path.join(_APP_DIR, "tools source", "SA_WinTools_Lib.ps1")
@@ -64,7 +67,10 @@ _SFC = r"""Write-Output '=======================================================
 Write-Output ' SA WinTools - SFC System File Checker (sfc /scannow)'
 Write-Output '============================================================'
 Write-Output ''
-sfc /scannow *>&1 | Out-String -Width 4096 | Write-Output
+Write-Output '[*] Running sfc /scannow - this may take 5-15 minutes...'
+Write-Output '    Progress will stream below as sfc reports it:'
+Write-Output ''
+sfc /scannow 2>&1 | ForEach-Object { Write-Output $_ }
 Write-Output ''
 Write-Output '[SUCCESS] SFC scan completed.'
 Write-Output '============================================================'
@@ -74,7 +80,10 @@ _DISM_CLEAN = r"""Write-Output '================================================
 Write-Output ' SA WinTools - DISM Component Cleanup'
 Write-Output '============================================================'
 Write-Output ''
-dism.exe /Online /Cleanup-Image /StartComponentCleanup /ResetBase *>&1 | Out-String -Width 4096 | Write-Output
+Write-Output '[*] Running DISM /StartComponentCleanup /ResetBase...'
+Write-Output '    This may take several minutes - progress will stream below:'
+Write-Output ''
+dism.exe /Online /Cleanup-Image /StartComponentCleanup /ResetBase 2>&1 | ForEach-Object { Write-Output $_ }
 Write-Output ''
 Write-Output '[SUCCESS] DISM component cleanup completed.'
 Write-Output '============================================================'
@@ -84,7 +93,11 @@ _DISM_REPAIR = r"""Write-Output '===============================================
 Write-Output ' SA WinTools - DISM RestoreHealth'
 Write-Output '============================================================'
 Write-Output ''
-dism.exe /Online /Cleanup-Image /RestoreHealth *>&1 | Out-String -Width 4096 | Write-Output
+Write-Output '[*] Running DISM /RestoreHealth...'
+Write-Output '    This may take 10-30 minutes if it needs to download files.'
+Write-Output '    Progress will stream below as DISM reports it:'
+Write-Output ''
+dism.exe /Online /Cleanup-Image /RestoreHealth 2>&1 | ForEach-Object { Write-Output $_ }
 Write-Output ''
 Write-Output '[SUCCESS] DISM repair completed.'
 Write-Output '============================================================'
@@ -285,6 +298,9 @@ Get-ChildItem $root -Recurse -File -Force -EA SilentlyContinue | ForEach-Object 
         $directSize[$parent] = $_.Length
     }
     $fileCount++
+    if ($fileCount % 5000 -eq 0) {
+        Write-Output "[*]   ...processed $fileCount files so far..."
+    }
 }
 Write-Output "[*] Processed $fileCount files."
 Write-Output ''
@@ -355,8 +371,15 @@ Write-Output ''
 Write-Output '[*] Phase 3: Hashing same-size files (SHA1)...'
 $hashGroups = @{}
 $hashCount = 0
+$totalToHash = 0
+foreach ($size in $duplicateSizes) { $totalToHash += $bySize[$size].Count }
+$hashIdx = 0
 foreach ($size in $duplicateSizes) {
     foreach ($f in $bySize[$size]) {
+        $hashIdx++
+        if ($totalToHash -gt 0 -and ($hashIdx % 50 -eq 0 -or $hashIdx -eq $totalToHash)) {
+            Write-Output "[*]   ...hashing ($hashIdx/$totalToHash)..."
+        }
         try {
             $hash = (Get-FileHash $f.FullName -Algorithm SHA1 -EA Stop).Hash
         } catch {
@@ -514,10 +537,10 @@ Write-Output ' SA WinTools - Reset Network Credentials'
 Write-Output '============================================================'
 Write-Output ''
 Write-Output '[STEP 1] Disconnecting all mapped network drives...'
-net use * /delete /y *>&1 | Out-String -Width 4096 | Write-Output
+net use * /delete /y 2>&1 | ForEach-Object { Write-Output $_ }
 Write-Output ''
 Write-Output '[STEP 2] Purging cached Kerberos authentication tickets...'
-klist purge *>&1 | Out-String -Width 4096 | Write-Output
+klist purge 2>&1 | ForEach-Object { Write-Output $_ }
 Write-Output ''
 Write-Output '[STEP 3] Hardening SMB guest authentication policy...'
 $regPath = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\LanmanWorkstation'
@@ -578,7 +601,7 @@ if ($ssdVolumes.Count -eq 0) {
 
 foreach ($v in $ssdVolumes) {
     Write-Output "[*] Trimming volume $($v.DriveLetter): ..."
-    Optimize-Volume -DriveLetter $v.DriveLetter -ReTrim -Verbose *>&1 | Out-String -Width 4096 | Write-Output
+    Optimize-Volume -DriveLetter $v.DriveLetter -ReTrim -Verbose 2>&1 | ForEach-Object { Write-Output $_ }
     Write-Output "    [OK] Trim complete for $($v.DriveLetter):"
     Write-Output ''
 }
@@ -596,11 +619,12 @@ Write-Output '============================================================'
 Write-Output ''
 Write-Output '[*] Initializing chkdsk operation...'
 Write-Output '[!] If the drive is in use you may be asked to schedule on restart.'
+Write-Output '    Progress will stream below as chkdsk reports it:'
 Write-Output ''
 if ($mode) {
-    chkdsk "$($drive):" $mode *>&1 | Out-String -Width 4096 | Write-Output
+    chkdsk "$($drive):" $mode 2>&1 | ForEach-Object { Write-Output $_ }
 } else {
-    chkdsk "$($drive):" *>&1 | Out-String -Width 4096 | Write-Output
+    chkdsk "$($drive):" 2>&1 | ForEach-Object { Write-Output $_ }
 }
 Write-Output ''
 Write-Output '[SUCCESS] Task completed.'
@@ -779,7 +803,7 @@ _WIFI_PROFILES = r"""Write-Output '=============================================
 Write-Output ' SA WinTools - Wi-Fi Saved Profiles'
 Write-Output '============================================================'
 Write-Output ''
-netsh wlan show profiles *>&1 | Out-String -Width 4096 | Write-Output
+netsh wlan show profiles 2>&1 | ForEach-Object { Write-Output $_ }
 Write-Output '[SUCCESS] Wi-Fi profiles query completed.'
 Write-Output '============================================================'
 """
@@ -789,7 +813,7 @@ Write-Output '============================================================'
 Write-Output " SA WinTools - Wi-Fi Password for: $profileName"
 Write-Output '============================================================'
 Write-Output ''
-netsh wlan show profile name="$profileName" key=clear *>&1 | Out-String -Width 4096 | Write-Output
+netsh wlan show profile name="$profileName" key=clear 2>&1 | ForEach-Object { Write-Output $_ }
 Write-Output '[SUCCESS] Wi-Fi password query completed.'
 Write-Output '============================================================'
 """
@@ -799,7 +823,9 @@ Write-Output ' SA WinTools - Wi-Fi Connectivity Report'
 Write-Output '============================================================'
 Write-Output ''
 Write-Output '[*] Generating WLAN report (this may take a moment)...'
-netsh wlan show wlanreport *>&1 | Out-String -Width 4096 | Write-Output
+Write-Output '    Output will stream below as netsh reports it:'
+Write-Output ''
+netsh wlan show wlanreport 2>&1 | ForEach-Object { Write-Output $_ }
 Write-Output ''
 Write-Output '[INFO] Report saved to: C:\ProgramData\Microsoft\Windows\WlanReport\'
 Write-Output '[SUCCESS] Wi-Fi report generated.'
@@ -810,7 +836,7 @@ _FW_DISABLE = r"""Write-Output '================================================
 Write-Output ' SA WinTools - Disable Windows Firewall (All Profiles)'
 Write-Output '============================================================'
 Write-Output ''
-netsh advfirewall set allprofiles state off *>&1 | Out-String -Width 4096 | Write-Output
+netsh advfirewall set allprofiles state off 2>&1 | ForEach-Object { Write-Output $_ }
 Write-Output ''
 Write-Output '[WARNING] Firewall is now DISABLED on all profiles.'
 Write-Output '[!] Re-enable immediately using Enable Firewall mode.'
@@ -821,7 +847,7 @@ _FW_ENABLE = r"""Write-Output '=================================================
 Write-Output ' SA WinTools - Enable Windows Firewall (All Profiles)'
 Write-Output '============================================================'
 Write-Output ''
-netsh advfirewall set allprofiles state on *>&1 | Out-String -Width 4096 | Write-Output
+netsh advfirewall set allprofiles state on 2>&1 | ForEach-Object { Write-Output $_ }
 Write-Output ''
 Write-Output '[SUCCESS] Firewall re-enabled on all profiles.'
 Write-Output '============================================================'
@@ -832,8 +858,10 @@ Write-Output ' SA WinTools - Energy Efficiency Report (powercfg /energy)'
 Write-Output '============================================================'
 Write-Output ''
 Write-Output '[*] Generating energy report - this takes approximately 60 seconds...'
+Write-Output '    Output will stream below as powercfg reports it:'
+Write-Output ''
 $reportPath = "$env:TEMP\energy-report.html"
-powercfg /energy /output "$reportPath" *>&1 | Out-String -Width 4096 | Write-Output
+powercfg /energy /output "$reportPath" 2>&1 | ForEach-Object { Write-Output $_ }
 Write-Output ''
 if (Test-Path $reportPath) {
     Write-Output "[INFO] Report saved to: $reportPath"
@@ -849,8 +877,10 @@ Write-Output ' SA WinTools - Battery Health Report (powercfg /batteryreport)'
 Write-Output '============================================================'
 Write-Output ''
 Write-Output '[*] Generating battery report...'
+Write-Output '    Output will stream below as powercfg reports it:'
+Write-Output ''
 $reportPath = "$env:TEMP\battery-report.html"
-powercfg /batteryreport /output "$reportPath" *>&1 | Out-String -Width 4096 | Write-Output
+powercfg /batteryreport /output "$reportPath" 2>&1 | ForEach-Object { Write-Output $_ }
 Write-Output ''
 if (Test-Path $reportPath) {
     Write-Output "[INFO] Report saved to: $reportPath"
@@ -1096,6 +1126,40 @@ try {
 Write-Output '============================================================'
 """
 
+_UEFI_REBOOT = r"""Write-Output '============================================================'
+Write-Output ' SA WinTools - Reboot into UEFI BIOS Firmware Settings'
+Write-Output '============================================================'
+Write-Output ''
+Write-Output '[!] WARNING: This will immediately restart your computer and'
+Write-Output '    boot it directly into the UEFI firmware settings (BIOS).'
+Write-Output '    Save any open work before continuing.'
+Write-Output ''
+Write-Output '[*] Verifying firmware type...'
+$reg = Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control' -Name PEFirmwareType -EA 0
+if ($reg -and $reg.PEFirmwareType -eq 2) {
+    Write-Output '[OK] UEFI firmware detected - reboot will enter UEFI settings.'
+} elseif ($reg -and $reg.PEFirmwareType -eq 1) {
+    Write-Output '[ERROR] Legacy BIOS firmware detected.'
+    Write-Output '        shutdown /r /fw requires UEFI. On legacy BIOS the /fw'
+    Write-Output '        flag is ignored and the system reboots normally.'
+    Write-Output '        To enter BIOS on legacy systems, restart and press the'
+    Write-Output '        BIOS hotkey (usually F2, F10, or Del) during POST.'
+    Write-Output '============================================================'
+    return
+} else {
+    Write-Output '[WARNING] Could not determine firmware type from registry.'
+    Write-Output '         Proceeding - shutdown /r /fw will be attempted.'
+}
+Write-Output ''
+Write-Output '[*] Issuing reboot into firmware (shutdown /r /fw /t 0)...'
+Write-Output '    The computer will restart immediately.'
+Write-Output ''
+shutdown /r /fw /t 0 2>&1 | ForEach-Object { Write-Output $_ }
+Write-Output ''
+Write-Output '[SUCCESS] Reboot command issued. Entering UEFI on next boot.'
+Write-Output '============================================================'
+"""
+
 
 # ---------------------------------------------------------------------------
 #  Disk Analyzer - path_select scan scripts (emit __SCAN_BEGIN__/__SCAN_END__
@@ -1107,19 +1171,30 @@ _SCAN_APPDATA_LOCAL = r"""Write-Output '========================================
 Write-Output ' SA WinTools - AppData\Local Folder Scan (Top 20)'
 Write-Output '============================================================'
 Write-Output ''
-Write-Output "[*] Scanning $env:LOCALAPPDATA ..."
+Write-Output "[*] Enumerating top-level folders in $env:LOCALAPPDATA ..."
+$folders = Get-ChildItem -Path $env:LOCALAPPDATA -Directory -EA SilentlyContinue
+$total = $folders.Count
+Write-Output "[*] Found $total folders. Computing sizes (this may take a while)..."
 Write-Output ''
-$rows = Get-ChildItem -Path $env:LOCALAPPDATA -Directory -EA SilentlyContinue | ForEach-Object {
-    $size = (Get-ChildItem $_.FullName -Recurse -Force -File -EA SilentlyContinue |
+$allRows = @()
+$idx = 0
+foreach ($folder in $folders) {
+    $idx++
+    Write-Output "[*] ($idx/$total) Scanning: $($folder.Name)..."
+    $size = (Get-ChildItem $folder.FullName -Recurse -Force -File -EA SilentlyContinue |
              Measure-Object -Property Length -Sum).Sum
     if (-not $size) { $size = [long]0 }
-    [PSCustomObject]@{
+    $allRows += [PSCustomObject]@{
         SizeGB  = [math]::Round($size / 1GB, 2)
         SizeMB  = [math]::Round($size / 1MB, 1)
-        Path    = $_.FullName
+        Path    = $folder.FullName
         SizeRaw = $size
     }
-} | Sort-Object SizeRaw -Descending | Select-Object -First 20
+}
+$rows = $allRows | Sort-Object SizeRaw -Descending | Select-Object -First 20
+Write-Output ''
+Write-Output "[*] Scan complete. Top $($rows.Count) of $total folders by size:"
+Write-Output ''
 if ($rows) {
     $rows | Select-Object SizeGB, SizeMB, Path |
         Format-Table -AutoSize | Out-String -Width 4096 | Write-Output
@@ -1139,19 +1214,30 @@ _SCAN_APPDATA_ROAMING = r"""Write-Output '======================================
 Write-Output ' SA WinTools - AppData\Roaming Folder Scan (Top 20)'
 Write-Output '============================================================'
 Write-Output ''
-Write-Output "[*] Scanning $env:APPDATA ..."
+Write-Output "[*] Enumerating top-level folders in $env:APPDATA ..."
+$folders = Get-ChildItem -Path $env:APPDATA -Directory -EA SilentlyContinue
+$total = $folders.Count
+Write-Output "[*] Found $total folders. Computing sizes (this may take a while)..."
 Write-Output ''
-$rows = Get-ChildItem -Path $env:APPDATA -Directory -EA SilentlyContinue | ForEach-Object {
-    $size = (Get-ChildItem $_.FullName -Recurse -Force -File -EA SilentlyContinue |
+$allRows = @()
+$idx = 0
+foreach ($folder in $folders) {
+    $idx++
+    Write-Output "[*] ($idx/$total) Scanning: $($folder.Name)..."
+    $size = (Get-ChildItem $folder.FullName -Recurse -Force -File -EA SilentlyContinue |
              Measure-Object -Property Length -Sum).Sum
     if (-not $size) { $size = [long]0 }
-    [PSCustomObject]@{
+    $allRows += [PSCustomObject]@{
         SizeGB  = [math]::Round($size / 1GB, 2)
         SizeMB  = [math]::Round($size / 1MB, 1)
-        Path    = $_.FullName
+        Path    = $folder.FullName
         SizeRaw = $size
     }
-} | Sort-Object SizeRaw -Descending | Select-Object -First 20
+}
+$rows = $allRows | Sort-Object SizeRaw -Descending | Select-Object -First 20
+Write-Output ''
+Write-Output "[*] Scan complete. Top $($rows.Count) of $total folders by size:"
+Write-Output ''
 if ($rows) {
     $rows | Select-Object SizeGB, SizeMB, Path |
         Format-Table -AutoSize | Out-String -Width 4096 | Write-Output
@@ -1171,11 +1257,14 @@ _SCAN_PROFILE_FILES = r"""Write-Output '========================================
 Write-Output ' SA WinTools - Profile Files Scan (Top 20)'
 Write-Output '============================================================'
 Write-Output ''
-Write-Output "[*] Scanning $env:USERPROFILE for the biggest files..."
+Write-Output "[*] Enumerating all files in $env:USERPROFILE (recursive)..."
+Write-Output '    This may take a while on profiles with many files.'
 Write-Output ''
-$rows = Get-ChildItem -Path $env:USERPROFILE -Recurse -File -Force -EA SilentlyContinue |
-    Sort-Object Length -Descending |
-    Select-Object -First 20 |
+$files = Get-ChildItem -Path $env:USERPROFILE -Recurse -File -Force -EA SilentlyContinue
+$total = $files.Count
+Write-Output "[*] Found $total files. Sorting by size and selecting top 20..."
+Write-Output ''
+$rows = $files | Sort-Object Length -Descending | Select-Object -First 20 |
     ForEach-Object {
         [PSCustomObject]@{
             SizeGB  = [math]::Round($_.Length / 1GB, 2)
@@ -1184,6 +1273,8 @@ $rows = Get-ChildItem -Path $env:USERPROFILE -Recurse -File -Force -EA SilentlyC
             SizeRaw = $_.Length
         }
     }
+Write-Output "[*] Top $($rows.Count) biggest files:"
+Write-Output ''
 if ($rows) {
     $rows | Select-Object SizeGB, SizeMB, Path |
         Format-Table -AutoSize | Out-String -Width 4096 | Write-Output
@@ -1204,22 +1295,33 @@ Write-Output ' SA WinTools - Appx Package Scan (Top 20 by Size)'
 Write-Output '============================================================'
 Write-Output ''
 Write-Output '[*] Enumerating Appx packages for all users...'
+$packages = Get-AppxPackage -AllUsers -EA SilentlyContinue | Where-Object { $_.InstallLocation }
+$total = $packages.Count
+Write-Output "[*] Found $total packages with install locations. Computing sizes..."
 Write-Output ''
-$rows = Get-AppxPackage -AllUsers -EA SilentlyContinue | Where-Object { $_.InstallLocation } | ForEach-Object {
-    $path = $_.InstallLocation
+$allRows = @()
+$idx = 0
+foreach ($pkg in $packages) {
+    $idx++
+    Write-Output "[*] ($idx/$total) Scanning: $($pkg.Name)..."
+    $path = $pkg.InstallLocation
     $size = [long]0
     if (Test-Path $path) {
         $s = (Get-ChildItem -Path $path -Recurse -Force -File -EA SilentlyContinue |
               Measure-Object -Property Length -Sum).Sum
         if ($s) { $size = [long]$s }
     }
-    [PSCustomObject]@{
+    $allRows += [PSCustomObject]@{
         SizeMB    = [math]::Round($size / 1MB, 1)
-        Name      = $_.Name
-        FullName  = $_.PackageFullName
+        Name      = $pkg.Name
+        FullName  = $pkg.PackageFullName
         SizeRaw   = $size
     }
-} | Sort-Object SizeRaw -Descending | Select-Object -First 20
+}
+$rows = $allRows | Sort-Object SizeRaw -Descending | Select-Object -First 20
+Write-Output ''
+Write-Output "[*] Scan complete. Top $($rows.Count) of $total packages by size:"
+Write-Output ''
 if ($rows) {
     $rows | Select-Object SizeMB, Name, FullName |
         Format-Table -AutoSize | Out-String -Width 4096 | Write-Output
@@ -1343,8 +1445,9 @@ if (-not $npm) {
     return
 }
 Write-Output '[*] Running: npm cache clean --force'
+Write-Output '    Output will stream below as npm reports it:'
 Write-Output ''
-& npm cache clean --force *>&1 | Out-String -Width 4096 | Write-Output
+& npm cache clean --force 2>&1 | ForEach-Object { Write-Output $_ }
 Write-Output ''
 Write-Output '[SUCCESS] npm cache cleaned.'
 Write-Output '============================================================'
@@ -1361,8 +1464,9 @@ if (-not $pip) {
     return
 }
 Write-Output '[*] Running: pip cache purge'
+Write-Output '    Output will stream below as pip reports it:'
 Write-Output ''
-& pip cache purge *>&1 | Out-String -Width 4096 | Write-Output
+& pip cache purge 2>&1 | ForEach-Object { Write-Output $_ }
 Write-Output ''
 Write-Output '[SUCCESS] pip cache purged.'
 Write-Output '============================================================'
@@ -1790,6 +1894,14 @@ CATEGORIES: list[dict] = [
                 "modes": [
                     {"label": "Start Scan", "script": _WU_SCAN},
                     {"label": "Start Install", "script": _WU_INSTALL},
+                ],
+            },
+            {
+                "name": "UEFI BIOS Reboot",
+                "desc": "Restarts the computer and boots directly into the UEFI firmware settings (BIOS).",
+                "modes": [
+                    {"label": "Reboot into UEFI BIOS (shutdown /r /fw /t 0)",
+                     "script": _UEFI_REBOOT, "confirm": True, "reboot": True},
                 ],
             },
         ],

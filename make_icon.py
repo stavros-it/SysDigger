@@ -1,4 +1,4 @@
-"""Generate the SysPeek application icon (app.ico).
+"""Generate the SysDigger application icon (app.ico).
 
 Design: "System Info Monitor"
   - Dark rounded square background with subtle radial gradient

@@ -1,12 +1,12 @@
 @echo off
 REM ============================================================
-REM  SysPeek - Desktop Shortcut Installer
-REM  Creates a "SysPeek" shortcut on the current user's
-REM  Desktop pointing to syspeek.pyw with the custom app.ico.
+REM  SysDigger - Desktop Shortcut Installer
+REM  Creates a "SysDigger" shortcut on the current user's
+REM  Desktop pointing to sysdigger.pyw with the custom app.ico.
 REM ============================================================
 
 echo.
-echo  SysPeek - Desktop Shortcut Installer
+echo  SysDigger - Desktop Shortcut Installer
 echo  ====================================
 echo.
 
@@ -17,13 +17,13 @@ set "APP_DIR=%~dp0"
 powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
   "$appDir = $env:APP_DIR;" ^
   "if (-not $appDir) { Write-Host '  [ERROR] Could not resolve app folder.'; exit 1 };" ^
-  "$launcher = Join-Path $appDir 'syspeek.pyw';" ^
+  "$launcher = Join-Path $appDir 'sysdigger.pyw';" ^
   "$icon    = Join-Path $appDir 'app.ico';" ^
-  "if (-not (Test-Path $launcher)) { Write-Host '  [ERROR] syspeek.pyw not found in:'; Write-Host ('          ' + $appDir); exit 1 };" ^
+  "if (-not (Test-Path $launcher)) { Write-Host '  [ERROR] sysdigger.pyw not found in:'; Write-Host ('          ' + $appDir); exit 1 };" ^
   "if (-not (Test-Path $icon))    { Write-Host '  [ERROR] app.ico not found in:';    Write-Host ('          ' + $appDir); exit 1 };" ^
   "$desktop = [Environment]::GetFolderPath('Desktop');" ^
   "if (-not $desktop) { $desktop = Join-Path $env:USERPROFILE 'Desktop' };" ^
-  "$shortcut = Join-Path $desktop 'SysPeek.lnk';" ^
+  "$shortcut = Join-Path $desktop 'SysDigger.lnk';" ^
   "Write-Host ('  App folder : ' + $appDir);" ^
   "Write-Host ('  Target     : ' + $launcher);" ^
   "Write-Host ('  Icon       : ' + $icon);" ^
@@ -34,7 +34,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
   "$lnk.TargetPath       = $launcher;" ^
   "$lnk.IconLocation     = $icon + ',0';" ^
   "$lnk.WorkingDirectory = $appDir;" ^
-  "$lnk.Description      = 'SysPeek - System Information Viewer';" ^
+  "$lnk.Description      = 'SysDigger - System Information Viewer';" ^
   "$lnk.WindowStyle       = 7;" ^
   "$lnk.Save();" ^
   "Write-Host '';" ^
@@ -51,7 +51,7 @@ if not "%RC%"=="0" (
 )
 
 echo.
-echo  Done! A "SysPeek" shortcut is now on your Desktop.
+echo  Done! A "SysDigger" shortcut is now on your Desktop.
 echo  Double-click it to launch the app with the custom icon.
 echo.
 pause

@@ -30,6 +30,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Any
 
 from app_logger import get_logger
+from paths import data_dir
 
 logger = get_logger(__name__)
 
@@ -97,9 +98,7 @@ class Config:
     # ------------------------------------------------------------------ #
     @classmethod
     def _path(cls) -> str:
-        return os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), "config.json"
-        )
+        return os.path.join(data_dir(), "config.json")
 
     @classmethod
     def load(cls) -> "Config":

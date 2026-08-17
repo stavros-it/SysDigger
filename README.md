@@ -1,8 +1,8 @@
-# SysPeek
+# SysDigger
 
 Windows system information and diagnostics viewer with a Fluent-style GUI.
 
-![SysPeek](app_preview.png)
+![SysDigger](app_preview.png)
 
 ## Features
 
@@ -15,7 +15,7 @@ Windows system information and diagnostics viewer with a Fluent-style GUI.
 - **Devices** — USB, Bluetooth, printers, audio devices
 - **Health** — Windows Defender, activation, battery wear, restore points
 - **Diagnostics** — event logs, BSOD history, crash dumps, DirectX/D3D feature levels, environment variables, PATH entries
-- **Tools** — 26 integrated maintenance utilities (disk cleanup, SFC/DISM, disk analyzer with scan-then-pick cleanup, Appx manager, dev cache cleaner, hibernate manager, hosts editor, memory diagnostic, Windows Update trigger, Autopilot hash export, and more)
+- **Tools** — 27 integrated maintenance utilities (disk cleanup, SFC/DISM, disk analyzer with scan-then-pick cleanup, Appx manager, dev cache cleaner, hibernate manager, hosts editor, memory diagnostic, Windows Update trigger, UEFI BIOS reboot, Autopilot hash export, and more)
 
 ## Requirements
 
@@ -27,7 +27,7 @@ Windows system information and diagnostics viewer with a Fluent-style GUI.
 
 Download the latest release from the [Releases page](../../releases).
 
-Extract the zip and run `SysPeek.exe`. Windows will show a UAC prompt — click Yes to allow sensor access.
+Extract the zip and run `SysDigger.exe`. Windows will show a UAC prompt — click Yes to allow sensor access.
 
 ## Run from source
 
@@ -36,7 +36,7 @@ Extract the zip and run `SysPeek.exe`. Windows will show a UAC prompt — click 
 python -m pip install -r requirements.txt
 
 # Launch
-pythonw syspeek.pyw
+pythonw sysdigger.pyw
 ```
 
 Requires Python 3.12+.
@@ -56,19 +56,19 @@ See [BUILD_GUIDE.md](BUILD_GUIDE.md) for detailed build and code signing instruc
 - **GUI**: PySide6 (Qt for Python) with a custom Fluent-style dark/light theme
 - **Sensors**: LibreHardwareMonitorLib via pythonnet for CPU/GPU/motherboard sensors. A portable `LibreHardwareMonitor.exe` is launched hidden on startup to load the PawnIO kernel driver for motherboard SuperIO sensors (fan RPM, voltages, VRM temps). The driver is cleaned up on exit — nothing is permanently installed.
 - **Data collection**: WMI, winreg, psutil, ctypes — no PowerShell in the data layer (only in the Tools tab)
-- **Portability**: All writes go to the app directory (config, logs, cache). When built as exe and installed to a read-only location, falls back to `%LOCALAPPDATA%\SysPeek\`.
+- **Portability**: All writes go to the app directory (config, logs, cache). When built as exe and installed to a read-only location, falls back to `%LOCALAPPDATA%\SysDigger\`.
 
 ## Project structure
 
 | File | Role |
 |---|---|
-| `syspeek.pyw` | Entry point — UAC elevation, crash handler |
+| `sysdigger.pyw` | Entry point — UAC elevation, crash handler |
 | `app.py` | QApplication setup, theme, LHM bridge launch |
 | `gui.py` | Main GUI — 13 pages, cards, tables, sparklines, tools, settings |
 | `collectors.py` | All data collection (OS, HW, net, SW, health, diagnostics, processes) |
 | `sensors.py` | LibreHardwareMonitorLib .NET assembly loading |
 | `lhm_process.py` | Portable LHM.exe process manager (kernel driver for motherboard sensors) |
-| `tools.py` | 26 maintenance tools (4 categories, 57 PowerShell modes) |
+| `tools.py` | 27 maintenance tools (4 categories, 58 PowerShell modes) |
 | `config.py` | Config dataclass + JSON persistence |
 | `paths.py` | Portable path resolution for frozen exe |
 | `helpers.py` | Formatting utilities (bytes, speed, uptime) |
@@ -95,4 +95,4 @@ This program will not transfer any information to other networked systems unless
 
 ## License
 
-MIT License — see [LICENSE](LICENSE)
+Proprietary — Copyright (c) 2026 Stavros Antoniou. All rights reserved. See [LICENSE](LICENSE) for details.

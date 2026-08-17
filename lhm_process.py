@@ -1,92 +1,122 @@
-"""LibreHardwareMonitor.exe portable process manager.
+"""PawnIO kernel driver installer (portable mode).
 
-The standalone LHM GUI loads a kernel driver (PawnIO) that gives access
-to motherboard SuperIO sensors (fan speeds, voltages, temperatures).
-Loading the DLL directly via pythonnet does NOT load this driver, so
-motherboard sensors are missing.
+Installs the PawnIO kernel driver on app launch and uninstalls it on
+close, giving access to motherboard SuperIO sensors (fan speeds,
+voltages, temperatures) and AMD CPU MSR registers (clock, power,
+voltage, temperature) without leaving a permanent installation.
 
-This module launches the standalone ``LibreHardwareMonitor.exe`` hidden
-in the background on startup.  Once the PawnIO driver is loaded, the
-existing DLL-based sensor collection (``Collector._collect_sensors``)
-automatically picks up motherboard sensors — no WMI bridge needed.
+Background:
+    Starting with LHM 0.9.6 (Feb 2026), PawnIO is distributed as a
+    separate installer (https://github.com/namazso/PawnIO.Setup) and is
+    no longer bundled inside the LHM.exe release ZIP.  The DLL-based
+    ``Computer.Open()`` expects PawnIO to already be installed.
 
-On close, the LHM.exe process is killed and the PawnIO driver service
-is stopped and deleted, leaving no permanent installation.
-
-First run: downloads the LHM release ZIP (~6.6 MB) and extracts it to
-``lib/lhm_standalone/``.  Subsequent runs use the cached copy.
+Portable flow:
+    1. ``ensure_downloaded()`` — download ``PawnIO_setup.exe`` v2.2.0
+       to ``lib/pawnio/`` (cached, not re-downloaded on subsequent
+       launches).
+    2. ``start()`` — run ``PawnIO_setup.exe -install`` (silent, ~2.5s,
+       idempotent — works whether the service is absent, stopped, or
+       already running).  The installer places the driver in the Windows
+       DriverStore and starts the service.
+    3. ``wait_for_driver()`` — poll ``sc query PawnIO`` until RUNNING.
+    4. ``stop()`` — run ``uninstall.exe -uninstall -silent`` (~0.1s).
+       Removes ``C:\\Program Files\\PawnIO`` and stops the service.  The
+       service entry may remain as STOPPED until the next reboot
+       (Windows kernel driver limitation), but it is harmless and the
+       installer handles re-install cleanly on next launch.
 """
 
 from __future__ import annotations
 
-import io
 import os
 import subprocess
 import threading
 import time
-import zipfile
 
 from app_logger import get_logger
+from paths import pawnio_dir
 
 logger = get_logger(__name__)
 
-_APP_DIR = os.path.dirname(os.path.abspath(__file__))
-_LIB_DIR = os.path.join(_APP_DIR, "lib")
-_LHM_STANDALONE_DIR = os.path.join(_LIB_DIR, "lhm_standalone")
+_PAWNIO_DIR = pawnio_dir()
 
-LHM_RELEASE_URL = (
-    "https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/"
-    "releases/download/v0.9.6/LibreHardwareMonitor.zip"
+PAWNIO_SETUP_URL = (
+    "https://github.com/namazso/PawnIO.Setup/releases/download/2.2.0/"
+    "PawnIO_setup.exe"
 )
-LHM_EXE_NAME = "LibreHardwareMonitor.exe"
-LHM_VERSION = "0.9.6"
-LHM_VERSION_FILE = os.path.join(_LHM_STANDALONE_DIR, "version.txt")
+PAWNIO_VERSION = "2.2.0"
+PAWNIO_SETUP_NAME = "PawnIO_setup.exe"
+PAWNIO_VERSION_FILE = os.path.join(_PAWNIO_DIR, "version.txt")
 
-# Driver service names that LHM may create (cleaned up on stop).
-_DRIVER_SERVICES = ("PawnIO", "WinRing0_1_2_0", "WinRing0")
+# Path to the uninstaller that the PawnIO installer places on disk.
+_PAWNIO_UNINSTALLER = r"C:\Program Files\PawnIO\uninstall.exe"
+
+# Legacy driver services that older LHM versions created (cleaned up
+# on stop, but PawnIO itself is handled by the official uninstaller).
+_LEGACY_DRIVER_SERVICES = ("WinRing0_1_2_0", "WinRing0")
 
 
 class LhmProcess:
-    """Manages the lifecycle of a hidden LibreHardwareMonitor.exe process.
+    """Manages the PawnIO kernel driver installation (portable mode).
 
-    The process loads the PawnIO kernel driver, which gives the DLL-based
-    sensor collection access to motherboard SuperIO chips.  On stop, the
-    process is killed and the driver service is removed.
+    Despite the legacy name (kept to avoid breaking imports in app.py
+    and collectors.py), this class installs/uninstalls the standalone
+    PawnIO driver on each app run — no permanent installation left
+    behind after the app closes.
+
+    Lifecycle:
+        1. ``ensure_downloaded()`` — download ``PawnIO_setup.exe`` if not
+           cached.
+        2. ``start()`` — run ``PawnIO_setup.exe -install`` (silent).
+        3. ``wait_for_driver()`` — poll until the PawnIO service reports
+           RUNNING.
+        4. ``stop()`` — run ``uninstall.exe -uninstall -silent`` to
+           remove the driver and clean up.
     """
 
     def __init__(self) -> None:
-        self._process: subprocess.Popen | None = None
         self._driver_ready = False
         self._lock = threading.Lock()
         self._downloaded = False
         self._download_error: str = ""
 
     @property
-    def lhm_dir(self) -> str:
-        return _LHM_STANDALONE_DIR
+    def installer_path(self) -> str:
+        return os.path.join(_PAWNIO_DIR, PAWNIO_SETUP_NAME)
 
-    @property
-    def exe_path(self) -> str:
-        return os.path.join(_LHM_STANDALONE_DIR, LHM_EXE_NAME)
+    def _is_pawnio_service_running(self) -> bool:
+        """Check if the PawnIO service is in RUNNING state."""
+        try:
+            r = subprocess.run(
+                ["sc", "query", "PawnIO"],
+                capture_output=True, text=True,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                timeout=5,
+            )
+            return r.returncode == 0 and "RUNNING" in r.stdout
+        except Exception:
+            return False
 
     def is_downloaded(self) -> bool:
-        """Return True if LHM.exe is cached and version matches."""
-        if not os.path.exists(self.exe_path):
+        """Return True if the installer is cached and version matches."""
+        if not os.path.exists(self.installer_path):
             return False
         try:
-            with open(LHM_VERSION_FILE, "r") as f:
-                return f.read().strip() == LHM_VERSION
+            with open(PAWNIO_VERSION_FILE, "r", encoding="utf-8") as f:
+                return f.read().strip() == PAWNIO_VERSION
         except Exception:
             return False
 
     def ensure_downloaded(self) -> bool:
-        """Download and extract LHM.exe if not already cached.
+        """Download PawnIO_setup.exe if not already cached.
 
-        Returns True if the exe is ready (either was already cached or just
-        downloaded).  Returns False on failure (network error, etc.).
+        Returns True if the installer is ready.  Returns False on failure
+        (network error, etc.).
         """
         if self.is_downloaded():
             self._downloaded = True
+            logger.info("PawnIO installer already cached")
             return True
 
         try:
@@ -96,139 +126,85 @@ class LhmProcess:
             logger.error(self._download_error)
             return False
 
-        logger.info("Downloading LibreHardwareMonitor %s...", LHM_VERSION)
+        logger.info("Downloading PawnIO %s installer...", PAWNIO_VERSION)
         try:
-            resp = requests.get(LHM_RELEASE_URL, stream=True, timeout=120,
-                                headers={"Accept": "application/octet-stream"})
-            resp.raise_for_status()
+            with requests.get(PAWNIO_SETUP_URL, stream=True, timeout=120,
+                              headers={"Accept": "application/octet-stream"}) as resp:
+                resp.raise_for_status()
+                with open(self.installer_path, "wb") as f:
+                    for chunk in resp.iter_content(chunk_size=65536):
+                        f.write(chunk)
         except Exception as e:
             self._download_error = f"Download failed: {e}"
             logger.error(self._download_error)
             return False
 
-        buf = io.BytesIO()
-        for chunk in resp.iter_content(chunk_size=65536):
-            buf.write(chunk)
-        buf.seek(0)
-
-        os.makedirs(_LHM_STANDALONE_DIR, exist_ok=True)
         try:
-            with zipfile.ZipFile(buf) as zf:
-                for entry in zf.namelist():
-                    base = os.path.basename(entry)
-                    if not base:
-                        continue
-                    if base.endswith(".pdb") or base.endswith(".xml"):
-                        continue
-                    if "/" in entry and not entry.endswith(".dll") \
-                            and not entry.endswith(".exe") \
-                            and not entry.endswith(".config"):
-                        continue
-                    target = os.path.join(_LHM_STANDALONE_DIR, base)
-                    with open(target, "wb") as f:
-                        f.write(zf.read(entry))
+            with open(PAWNIO_VERSION_FILE, "w", encoding="utf-8") as f:
+                f.write(PAWNIO_VERSION)
         except Exception as e:
-            self._download_error = f"Extraction failed: {e}"
-            logger.error(self._download_error, exc_info=True)
-            return False
+            logger.warning("Failed to write PawnIO version file: %s", e)
 
-        if not os.path.exists(self.exe_path):
-            self._download_error = "Extraction complete but exe not found"
-            logger.error(self._download_error)
-            return False
-
-        self._patch_config()
-
-        logger.info("LHM.exe cached at %s", self.exe_path)
+        logger.info("PawnIO installer cached at %s", self.installer_path)
         self._downloaded = True
         return True
 
-    def _patch_config(self) -> None:
-        """Patch LibreHardwareMonitor.exe.config to enable the WMI provider.
-
-        Although we don't use WMI directly, enabling it ensures LHM.exe
-        fully initialises its sensor infrastructure (including driver load).
-        """
-        config_path = os.path.join(_LHM_STANDALONE_DIR,
-                                   "LibreHardwareMonitor.exe.config")
-        try:
-            with open(config_path, "r", encoding="utf-8") as f:
-                content = f.read()
-            if "wmiProvider" in content:
-                return
-            inject = (
-                "  <userSettings>\n"
-                "    <LibreHardwareMonitor.Properties.Settings>\n"
-                "      <setting name=\"wmiProvider\" serializeAs=\"String\">\n"
-                "        <value>True</value>\n"
-                "      </setting>\n"
-                "    </LibreHardwareMonitor.Properties.Settings>\n"
-                "  </userSettings>\n"
-            )
-            content = content.replace("</configuration>",
-                                      inject + "</configuration>")
-            with open(config_path, "w", encoding="utf-8") as f:
-                f.write(content)
-            logger.info("Patched LHM config: WMI provider enabled")
-        except Exception as e:
-            logger.warning("Failed to patch LHM config: %s", e)
-
     def start(self) -> bool:
-        """Launch LHM.exe hidden.  Returns True if launched.
+        """Run the PawnIO installer in silent mode.
 
-        Must be called after :meth:`ensure_downloaded`.  The process inherits
-        admin from SysPeek (launched via UAC elevation), so the kernel driver
-        can be loaded.
+        Uses the ``-install`` flag (the same flag LHM uses internally).
+        The installer is idempotent — it succeeds (exit 0) whether the
+        service is absent, stopped (marked for deletion from a previous
+        run), or already running.
         """
-        if not self.is_downloaded():
-            logger.warning("LHM.exe not downloaded, skipping launch")
+        if self._is_pawnio_service_running():
+            self._driver_ready = True
+            logger.info("PawnIO service already running")
+            return True
+
+        if not os.path.exists(self.installer_path):
+            logger.warning("PawnIO installer not downloaded, skipping")
             return False
 
-        self._patch_config()
-
         with self._lock:
-            if self._process and self._process.poll() is None:
-                logger.info("LHM.exe already running (PID %d)",
-                            self._process.pid)
+            if self._is_pawnio_service_running():
+                self._driver_ready = True
                 return True
 
+            logger.info("Installing PawnIO driver (silent)...")
             try:
-                si = subprocess.STARTUPINFO()
-                si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-                si.wShowWindow = 0  # SW_HIDE
-                creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-                self._process = subprocess.Popen(
-                    [self.exe_path],
-                    startupinfo=si,
-                    creationflags=creationflags,
-                    cwd=_LHM_STANDALONE_DIR,
+                r = subprocess.run(
+                    [self.installer_path, "-install"],
+                    capture_output=True,
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                    timeout=60,
                 )
-                logger.info("LHM.exe launched (PID %d)", self._process.pid)
-                return True
+                if r.returncode == 0:
+                    logger.info("PawnIO installer completed (exit 0)")
+                    return True
+                elif r.returncode == 3010:
+                    logger.info("PawnIO installed, reboot required")
+                    return True
+                else:
+                    logger.error("PawnIO installer failed (exit %d)",
+                                 r.returncode)
+                    return False
+            except subprocess.TimeoutExpired:
+                logger.error("PawnIO installer timed out")
+                return False
             except Exception as e:
-                logger.error("Failed to launch LHM.exe: %s", e,
+                logger.error("Failed to run PawnIO installer: %s", e,
                              exc_info=True)
-                self._process = None
                 return False
 
     def wait_for_driver(self, timeout: float = 20.0) -> bool:
-        """Poll until the PawnIO kernel driver is running.
-
-        LHM.exe needs a few seconds to load the driver.  We poll every 500ms.
-        """
+        """Poll until the PawnIO kernel driver is running."""
         if self._driver_ready:
             return True
-        proc = self._process
-        if not proc or proc.poll() is not None:
-            logger.warning("LHM.exe not running, cannot wait for driver")
-            return False
 
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
-            if proc.poll() is not None:
-                logger.warning("LHM.exe exited during driver wait")
-                return False
-            if self._is_driver_running():
+            if self._is_pawnio_service_running():
                 self._driver_ready = True
                 logger.info("PawnIO driver is running")
                 return True
@@ -237,66 +213,57 @@ class LhmProcess:
         logger.warning("PawnIO driver not running after %.1fs", timeout)
         return False
 
-    def _is_driver_running(self) -> bool:
-        """Check if any of the known driver services is running."""
-        for svc in _DRIVER_SERVICES:
-            try:
-                r = subprocess.run(
-                    ["sc", "query", svc],
-                    capture_output=True, text=True,
-                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-                    timeout=5,
-                )
-                if r.returncode == 0 and "RUNNING" in r.stdout:
-                    return True
-            except Exception:
-                pass
-        return False
-
     def is_driver_ready(self) -> bool:
         """Return True if the kernel driver is loaded."""
         if not self._driver_ready:
             return False
-        proc = self._process
-        if not proc or proc.poll() is not None:
-            self._driver_ready = False
-            return False
-        return True
+        return self._is_pawnio_service_running()
 
     def stop(self) -> None:
-        """Kill LHM.exe and clean up driver services."""
-        with self._lock:
-            proc = self._process
-            self._process = None
-            self._driver_ready = False
+        """Uninstall PawnIO and clean up legacy driver services.
 
-        if proc and proc.poll() is None:
+        Runs the official uninstaller (``uninstall.exe -uninstall
+        -silent``) which removes ``C:\\Program Files\\PawnIO``.  The
+        uninstaller doesn't stop the running service, so we explicitly
+        stop it via ``sc stop``.  The service entry may remain as
+        STOPPED until the next reboot (Windows kernel driver
+        limitation), but the installer handles re-install cleanly on
+        next app launch.
+        """
+        self._driver_ready = False
+
+        # Run the official uninstaller first (removes files).
+        if os.path.exists(_PAWNIO_UNINSTALLER):
             try:
-                subprocess.run(
-                    ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+                r = subprocess.run(
+                    [_PAWNIO_UNINSTALLER, "-uninstall", "-silent"],
                     capture_output=True,
                     creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-                    timeout=5,
+                    timeout=30,
                 )
-                logger.info("LHM.exe terminated (PID %d)", proc.pid)
-            except Exception:
-                try:
-                    proc.kill()
-                except Exception:
-                    pass
+                if r.returncode == 0:
+                    logger.info("PawnIO uninstalled (exit 0)")
+                else:
+                    logger.warning("PawnIO uninstaller exit %d",
+                                   r.returncode)
+            except Exception as e:
+                logger.warning("PawnIO uninstall failed: %s", e)
+        else:
+            logger.info("PawnIO uninstaller not found (already removed)")
 
-        self._cleanup_driver_services()
+        # Stop the PawnIO service (the uninstaller doesn't do this).
+        try:
+            subprocess.run(
+                ["sc", "stop", "PawnIO"],
+                capture_output=True, text=True,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                timeout=10,
+            )
+        except Exception:
+            pass
 
-    def _cleanup_driver_services(self) -> None:
-        """Stop and delete any kernel driver services LHM created.
-
-        Kernel drivers may not support being stopped while loaded (the driver
-        remains in kernel memory until reboot).  In that case, ``sc stop``
-        fails silently but ``sc delete`` still marks the service as
-        ``Disabled`` so it won't start on next boot and will be fully
-        removed by Windows on reboot.
-        """
-        for svc in _DRIVER_SERVICES:
+        # Clean up legacy WinRing0 services from older LHM versions.
+        for svc in _LEGACY_DRIVER_SERVICES:
             try:
                 r = subprocess.run(
                     ["sc", "query", svc],
@@ -306,23 +273,17 @@ class LhmProcess:
                 )
                 if r.returncode != 0:
                     continue
-                logger.info("Cleaning up driver service: %s", svc)
+                logger.info("Cleaning up legacy driver service: %s", svc)
                 subprocess.run(["sc", "stop", svc], capture_output=True,
                                creationflags=getattr(subprocess,
                                                     "CREATE_NO_WINDOW", 0),
                                timeout=5)
                 time.sleep(0.5)
-                r2 = subprocess.run(["sc", "delete", svc],
-                                    capture_output=True, text=True,
-                                    creationflags=getattr(subprocess,
-                                                          "CREATE_NO_WINDOW",
-                                                          0),
-                                    timeout=5)
-                if r2.returncode == 0:
-                    logger.info("Driver service %s marked for deletion", svc)
-                else:
-                    logger.warning("Could not delete service %s: %s",
-                                   svc, r2.stderr.strip())
+                subprocess.run(["sc", "delete", svc],
+                               capture_output=True, text=True,
+                               creationflags=getattr(subprocess,
+                                                    "CREATE_NO_WINDOW", 0),
+                               timeout=5)
             except Exception:
                 pass
 
@@ -332,5 +293,4 @@ class LhmProcess:
 
     @property
     def is_running(self) -> bool:
-        proc = self._process
-        return proc is not None and proc.poll() is None
+        return self._driver_ready

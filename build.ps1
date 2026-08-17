@@ -1,4 +1,4 @@
-# build.ps1 — SysPeek build + sign pipeline
+# build.ps1 — SysDigger build + sign pipeline
 # Usage:  .\build.ps1
 # Requires: Python 3.12+, pip packages (auto-installed), signtool.exe (optional)
 #
@@ -10,7 +10,7 @@ $root = $PSScriptRoot
 Set-Location $root
 
 Write-Host "========================================" -ForegroundColor Cyan
-Write-Host " SysPeek Build Pipeline" -ForegroundColor Cyan
+Write-Host " SysDigger Build Pipeline" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 
 # 1. Install dependencies
@@ -20,7 +20,7 @@ python -m pip install -r requirements.txt --upgrade
 # 2. Compile-check all Python files
 Write-Host "`n[2/5] Compile-checking..." -ForegroundColor Yellow
 python -m py_compile `
-    app.py gui.py collectors.py syspeek.pyw tools.py `
+    app.py gui.py collectors.py sysdigger.pyw tools.py `
     sensors.py helpers.py config.py lhm_process.py `
     updater.py app_logger.py paths.py
 if ($LASTEXITCODE -ne 0) {
@@ -35,17 +35,17 @@ Remove-Item -Recurse -Force build, dist -ErrorAction SilentlyContinue
 
 # 4. Build with PyInstaller
 Write-Host "`n[4/5] Building with PyInstaller..." -ForegroundColor Yellow
-pyinstaller syspeek.spec --noconfirm --clean
+pyinstaller sysdigger.spec --noconfirm --clean
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Build failed!" -ForegroundColor Red
     exit 1
 }
-Write-Host "  Build output: dist\SysPeek\" -ForegroundColor Green
+Write-Host "  Build output: dist\SysDigger\" -ForegroundColor Green
 
 # 5. Sign (if cert available)
 if ($env:SIGN_CERT_THUMBPRINT) {
     Write-Host "`n[5/5] Signing executables and DLLs..." -ForegroundColor Yellow
-    $signable = Get-ChildItem -Recurse -Path ".\dist\SysPeek" -Include *.exe, *.dll
+    $signable = Get-ChildItem -Recurse -Path ".\dist\SysDigger" -Include *.exe, *.dll
     foreach ($f in $signable) {
         Write-Host "  Signing: $($f.Name)"
         & signtool sign /fd sha256 /td sha256 `
@@ -61,7 +61,7 @@ if ($env:SIGN_CERT_THUMBPRINT) {
 }
 
 # Done
-$output = ".\dist\SysPeek"
+$output = ".\dist\SysDigger"
 $size = (Get-ChildItem -Recurse $output | Measure-Object -Property Length -Sum).Sum / 1MB
 Write-Host "`n========================================" -ForegroundColor Cyan
 Write-Host " Build complete!" -ForegroundColor Green

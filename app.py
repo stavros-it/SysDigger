@@ -1,9 +1,9 @@
-"""SysPeek — Windows System Information Viewer.
+"""SysDigger — Windows System Information Viewer.
 
 Gathers and displays Windows OS, hardware, network adapter, and external IP
 information in a PySide6 (Qt) Fluent-design GUI.
 
-Entry point: run ``python app.py`` or ``pythonw syspeek.pyw``.
+Entry point: run ``python app.py`` or ``pythonw sysdigger.pyw``.
 """
 
 from __future__ import annotations
@@ -17,25 +17,25 @@ from app_logger import get_logger
 from collectors import Collector
 from config import get_config
 from gui import InfoWindow, build_qss
+from paths import icon_path
 
 logger = get_logger(__name__)
 
 # AppID so Windows groups taskbar entries under a stable, branded identity
 # (otherwise pythonw.exe shows a generic Python icon in the taskbar).
-_APP_ID = "Stavros.SysPeek"
+_APP_ID = "Stavros.SysDigger"
 
 
 def _is_system_dark() -> bool:
     """Detect if Windows is using dark theme via registry."""
     try:
         import winreg
-        key = winreg.OpenKey(
+        with winreg.OpenKey(
             winreg.HKEY_CURRENT_USER,
             r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"
-        )
-        val, _ = winreg.QueryValueEx(key, "AppsUseLightTheme")
-        winreg.CloseKey(key)
-        return val == 0  # 0 = dark, 1 = light
+        ) as key:
+            val, _ = winreg.QueryValueEx(key, "AppsUseLightTheme")
+            return val == 0  # 0 = dark, 1 = light
     except Exception:
         return True  # Default to dark
 
@@ -48,19 +48,40 @@ def _resolve_theme() -> str:
     return cfg.theme
 
 
+def _is_elevated() -> bool:
+    """Check if the current process has an elevated token.
+
+    Uses IsUserAnAdmin() which correctly detects UAC elevation on Windows
+    Vista+.  Returns True if the process is running with admin privileges.
+    """
+    try:
+        import ctypes
+        return bool(ctypes.windll.shell32.IsUserAnAdmin())
+    except Exception:
+        return False
+
+
 def main() -> None:
     logger.info("Starting QApplication")
+    
+    # Warn (not block) if not elevated — sensor access will be limited.
+    if not _is_elevated():
+        logger.warning(
+            "Process is NOT elevated — PawnIO driver (motherboard/CPU "
+            "sensors) and some WMI namespaces will fail. Run via "
+            "sysdigger.pyw for UAC elevation."
+        )
     app = QApplication()
     app.setStyle("Fusion")
 
     # Set the app icon on the QApplication so it appears in the Windows
     # taskbar (grouping/tooltip) and on any top-level window/dialog.
-    icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "app.ico")
-    if os.path.exists(icon_path):
-        app.setWindowIcon(QIcon(icon_path))
+    icon_path_str = icon_path()
+    if os.path.exists(icon_path_str):
+        app.setWindowIcon(QIcon(icon_path_str))
 
     # Register a stable AppUserModelID so the taskbar shows our icon and
-    # groups the window under "SysPeek" instead of pythonw.exe.
+    # groups the window under "SysDigger" instead of pythonw.exe.
     try:
         import ctypes
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(_APP_ID)
@@ -105,22 +126,21 @@ def main() -> None:
     logger.info("Creating Collector")
     collector = Collector()
 
-    # Launch the standalone LHM.exe in the background.  This loads the
-    # PawnIO kernel driver needed for motherboard SuperIO sensors (fans,
-    # voltages, VRM temps).  Once the driver is loaded, the existing
-    # DLL-based sensor collection picks up motherboard sensors automatically.
-    # LHM.exe runs hidden; killed + driver removed on close.  Done in a
-    # background thread so it doesn't block the GUI startup.
+    # Install the PawnIO kernel driver in the background.  This gives
+    # the DLL-based sensor collection access to motherboard SuperIO
+    # sensors (fans, voltages, VRM temps) and AMD CPU MSR registers
+    # (clock, power, voltage, temperature).  The driver is uninstalled
+    # on close — nothing permanent is left behind (portable mode).
     def _start_lhm_bridge() -> None:
         try:
             from lhm_process import LhmProcess
             proc = LhmProcess()
             # Attach to collector immediately so closeEvent can stop it
-            # even if the app is closed during download/startup.
+            # even if the app is closed during download/install.
             collector.set_lhm_process(proc)
             if not proc.ensure_downloaded():
                 logger.warning(
-                    "LHM bridge unavailable: %s", proc.download_error
+                    "PawnIO unavailable: %s", proc.download_error
                 )
                 return
             if proc.start():
@@ -129,7 +149,7 @@ def main() -> None:
                 # the driver is ready.
                 collector.set_lhm_process(proc)
         except Exception as e:
-            logger.warning("LHM bridge failed: %s", e, exc_info=True)
+            logger.warning("PawnIO bridge failed: %s", e, exc_info=True)
 
     import threading as _threading
     _lhm_thread = _threading.Thread(target=_start_lhm_bridge, daemon=True)

@@ -24,34 +24,9 @@ import os
 import sys
 from datetime import datetime
 
-def _resolve_log_dir() -> str:
-    """Return a writable directory for app.log.
+from paths import data_dir
 
-    Prefers the script/exe directory (portable).  Falls back to
-    %LOCALAPPDATA%\\SysPeek when the primary location is read-only
-    (e.g. Program Files, CD-ROM, network share).
-    """
-    if getattr(sys, "frozen", False):
-        primary = os.path.dirname(sys.executable)
-    else:
-        primary = os.path.dirname(os.path.abspath(__file__))
-    try:
-        test_file = os.path.join(primary, ".syspeek_write_test")
-        with open(test_file, "w") as f:
-            f.write("ok")
-        os.remove(test_file)
-        return primary
-    except OSError:
-        pass
-    fallback = os.path.join(os.environ.get("LOCALAPPDATA", ""), "SysPeek")
-    try:
-        os.makedirs(fallback, exist_ok=True)
-        return fallback
-    except OSError:
-        return primary
-
-
-_LOG_DIR = _resolve_log_dir()
+_LOG_DIR = data_dir()
 _LOG_PATH = os.path.join(_LOG_DIR, "app.log")
 _MAX_LOG_SIZE = 2 * 1024 * 1024  # 2 MB
 _MAX_LOG_BACKUPS = 3
@@ -98,7 +73,7 @@ def log_startup() -> None:
     """Log a startup banner with Python version and platform info."""
     logger = get_logger("app")
     logger.info("=" * 60)
-    logger.info("Windows System Information Viewer starting")
+    logger.info("SysDigger starting")
     logger.info("Python %s", sys.version.replace("\n", " "))
     logger.info("Log file: %s", _LOG_PATH)
     logger.info("=" * 60)

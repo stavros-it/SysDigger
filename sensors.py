@@ -10,6 +10,7 @@ import os
 
 from app_logger import get_logger
 from helpers import fmt_bytes
+from paths import lib_dir
 
 logger = get_logger(__name__)
 
@@ -24,7 +25,7 @@ try:
     import clr as _clr
     from System import AppDomain as _AppDomain
 
-    _lib_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "lib")
+    _lib_dir = lib_dir()
     if os.path.isdir(_lib_dir):
         logger.info("Loading LibreHardwareMonitorLib from %s", _lib_dir)
         # Swap in pending .new DLLs from a previous update (before loading)

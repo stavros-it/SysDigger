@@ -1,4 +1,4 @@
-"""Portable path resolution for SysPeek.
+"""Portable path resolution for SysDigger.
 
 Distinguishes read-only resources (icons, bundled DLLs, PowerShell lib)
 from writable data (config.json, app.log, cache/, lib/lhm_standalone/).
@@ -7,7 +7,7 @@ When running as a script, both resolve to the script directory.
 When packaged as a frozen exe (PyInstaller):
   - ``resource_dir()`` returns ``sys._MEIPASS`` (bundled read-only assets)
   - ``data_dir()`` returns the exe directory if writable, else
-    ``%LOCALAPPDATA%\\SysPeek`` (per-user writable fallback)
+    ``%LOCALAPPDATA%\\SysDigger`` (per-user writable fallback)
 """
 
 from __future__ import annotations
@@ -38,7 +38,7 @@ def data_dir() -> str:
     """Directory for writable per-user data (config, logs, cache, downloads).
 
     Prefers the exe/script directory (portable mode).  Falls back to
-    ``%LOCALAPPDATA%\\SysPeek`` when the primary location is read-only
+    ``%LOCALAPPDATA%\\SysDigger`` when the primary location is read-only
     (e.g. Program Files, CD-ROM, network share).
     """
     if _FROZEN:
@@ -47,7 +47,7 @@ def data_dir() -> str:
         primary = os.path.dirname(os.path.abspath(__file__))
     if os.access(primary, os.W_OK):
         return primary
-    fallback = os.path.join(os.environ.get("LOCALAPPDATA", ""), "SysPeek")
+    fallback = os.path.join(os.environ.get("LOCALAPPDATA", ""), "SysDigger")
     try:
         os.makedirs(fallback, exist_ok=True)
         if os.access(fallback, os.W_OK):
@@ -70,8 +70,19 @@ def lib_dir() -> str:
 
 
 def lhm_standalone_dir() -> str:
-    """Directory for the portable LHM.exe download (writable)."""
+    """Directory for the portable LHM.exe download (writable).
+
+    Kept for backward compatibility — no longer used since v4.13 switched
+    to the standalone PawnIO driver installer.
+    """
     return os.path.join(data_dir(), "lib", "lhm_standalone")
+
+
+def pawnio_dir() -> str:
+    """Directory for the PawnIO driver installer cache (writable)."""
+    d = os.path.join(data_dir(), "lib", "pawnio")
+    os.makedirs(d, exist_ok=True)
+    return d
 
 
 def icon_path(name: str = "app.ico") -> str:

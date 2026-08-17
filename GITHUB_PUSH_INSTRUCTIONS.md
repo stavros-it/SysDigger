@@ -1,6 +1,6 @@
 # Instructions: Create GitHub Repo and Push
 
-Follow these steps when you're ready to put SysPeek on GitHub.
+Follow these steps when you're ready to put SysDigger on GitHub.
 Everything is already committed locally and ready to push.
 
 ---
@@ -9,7 +9,7 @@ Everything is already committed locally and ready to push.
 
 1. Go to https://github.com/new
 2. Fill in:
-   - **Repository name**: `SysPeek`
+   - **Repository name**: `SysDigger`
    - **Description**: `Windows system information and diagnostics viewer`
    - **Visibility**: **Public** (required for SignPath free signing)
    - **DO NOT** check "Add a README file"
@@ -23,7 +23,7 @@ GitHub no longer accepts passwords for Git operations. You need a token:
 1. Go to https://github.com/settings/tokens
 2. Click **Generate new token** → **Generate new token (classic)**
 3. Fill in:
-   - **Note**: `SysPeek push access`
+   - **Note**: `SysDigger push access`
    - **Expiration**: 90 days
    - **Scopes**: check **`repo`** (full repository access)
 4. Click **Generate token**
@@ -34,10 +34,10 @@ GitHub no longer accepts passwords for Git operations. You need a token:
 Open PowerShell and run:
 
 ```pwsh
-cd "C:\Users\Stavros\OneDrive\My AI Apps\SysPeek"
+cd "C:\Users\Stavros\OneDrive\My AI Apps\SysDigger"
 
 # Connect to your GitHub repo
-git remote add origin https://github.com/stavros-it/SysPeek.git
+git remote add origin https://github.com/stavros-it/SysDigger.git
 
 # Push your code
 git push -u origin main
@@ -52,7 +52,7 @@ Windows Credential Manager will remember the token, so you only do this once.
 ### If you get "remote origin already exists"
 
 ```pwsh
-git remote set-url origin https://github.com/stavros-it/SysPeek.git
+git remote set-url origin https://github.com/stavros-it/SysDigger.git
 git push -u origin main
 ```
 
@@ -67,21 +67,23 @@ git push -u origin main
 
 ## Step 4: Verify
 
-Go to https://github.com/stavros-it/SysPeek — you should see:
+Go to https://github.com/stavros-it/SysDigger — you should see:
 - All your files
 - README.md displayed on the front page
-- LICENSE file (MIT License)
+- LICENSE file (Proprietary License)
 
-## Step 5: Apply for free code signing (optional, do this later)
+## Step 5: Apply for free code signing (NOT available — app is proprietary)
 
-1. Go to https://signpath.org/apply
-2. Fill in:
-   - **Project name**: SysPeek
-   - **Repository URL**: `https://github.com/stavros-it/SysPeek`
-   - **License**: MIT
-   - **Description**: Windows system information and diagnostics viewer with 26 maintenance tools. Built with Python/PySide6. Uses LibreHardwareMonitorLib for sensor data.
-3. Wait 1-2 weeks for approval email
-4. Follow `GITHUB_SIGNING_GUIDE.md` Part 6 onwards to complete SignPath setup
+> SignPath free signing requires an OSI-approved open-source license
+> (MIT, Apache, etc.). Since SysDigger is now proprietary, the free
+> SignPath workflow is **not available**.
+
+Use one of these paid alternatives instead:
+- **Azure Trusted Signing** (~$10/month) — Microsoft's managed signing
+- **OV certificate** (~$200/year) — standard code signing
+- **EV certificate** (~$400/year) — immediate SmartScreen reputation
+
+See `GITHUB_SIGNING_GUIDE.md` and `BUILD_GUIDE.md` for details.
 
 ---
 
@@ -90,7 +92,7 @@ Go to https://github.com/stavros-it/SysPeek — you should see:
 Every time you change code and want to update GitHub:
 
 ```pwsh
-cd "C:\Users\Stavros\OneDrive\My AI Apps\SysPeek"
+cd "C:\Users\Stavros\OneDrive\My AI Apps\SysDigger"
 
 # Stage all changes
 git add .
@@ -113,10 +115,10 @@ git push origin v4.12
 ```
 
 Then on GitHub:
-1. Go to https://github.com/stavros-it/SysPeek/releases
+1. Go to https://github.com/stavros-it/SysDigger/releases
 2. Click **Draft a new release**
 3. Select tag `v4.12`
-4. Title: `SysPeek v4.12`
+4. Title: `SysDigger v4.12`
 5. Describe changes
 6. Click **Publish release**
 

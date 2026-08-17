@@ -1,4 +1,4 @@
-# AGENTS.md — SysPeek Agent Memory
+# AGENTS.md — SysDigger Agent Memory
 
 > Operational memory for AI agents working on this codebase.
 > Read this before making changes. Update after non-trivial work.
@@ -8,18 +8,18 @@
 
 ## Quick Reference
 
-- **App name:** SysPeek (renamed from "Windows Info" in v4.5)
-- **Version:** 4.11
-- **Entry point:** `syspeek.pyw` (renamed from `launcher.pyw`)
-- **AppUserModelID:** `"Stavros.SysPeek"`
-- **Window title:** `"SysPeek  ·  Copyright (C) Stavros Antoniou"`
+- **App name:** SysDigger (renamed from "SysPeek" in v4.16, originally "Windows Info" in v4.5)
+- **Version:** 4.16
+- **Entry point:** `sysdigger.pyw` (renamed from `launcher.pyw`)
+- **AppUserModelID:** `"Stavros.SysDigger"`
+- **Window title:** `"SysDigger  ·  Copyright (C) Stavros Antoniou"`
 - **Copyright:** Copyright (C) Stavros Antoniou
 
 ## Verification Commands
 
 ```pwsh
 # Compile-check (run after every code change)
-python -m py_compile app.py gui.py collectors.py syspeek.pyw tools.py sensors.py helpers.py config.py lhm_process.py paths.py
+python -m py_compile app.py gui.py collectors.py sysdigger.pyw tools.py sensors.py helpers.py config.py lhm_process.py paths.py
 
 # Test a collector method
 python -c "from collectors import Collector; c = Collector(); c._init_wmi(); c.collect_hardware(); print(c.data.hw_info['gpus'])"
@@ -150,16 +150,16 @@ The app must NOT call `_start_collection()` in `InfoWindow.__init__()`. Qt proce
 |---|---|---|
 | `gui.py` | ~5830 | Main GUI: all pages, cards, tables, dialogs, exports, `_FlowLayout`, `_ToolCard`, `_Sparkline`, `SettingsDialog` (sidebar-style), `path_select` multi-select input |
 | `collectors.py` | ~3816 | All data collection (OS, HW, net, SW, health, diagnostics, speed test, processes with Disk/Network) |
-| `tools.py` | ~1710 | Tool catalogue: 4 categories, 26 tools, 57 PowerShell modes (includes Autopilot hash with validation, disk analyzer with 8 modes incl. scan-then-pick cleanup, memory diagnostic, hosts editor, WU trigger, appx manager, dev cache cleaner, hibernate manager) |
+| `tools.py` | ~1710 | Tool catalogue: 4 categories, 27 tools, 58 PowerShell modes (includes Autopilot hash with validation, disk analyzer with 8 modes incl. scan-then-pick cleanup, memory diagnostic, hosts editor, WU trigger, appx manager, dev cache cleaner, hibernate manager, UEFI BIOS reboot) |
 | `config.py` | ~232 | Config dataclass (23 settings incl. 8 colorization thresholds) + JSON persistence |
 | `sensors.py` | ~115 | LibreHardwareMonitorLib wrapper |
 | `app.py` | ~109 | Entry point: QApplication, icon, AppUserModelID, theme, three-phase show |
-| `syspeek.pyw` | ~85 | Launcher: UAC elevation, logging, crash handler |
+| `sysdigger.pyw` | ~85 | Launcher: UAC elevation, logging, crash handler |
 | `helpers.py` | ~120 | fmt_bytes, fmt_speed, fmt_uptime, reg_value, etc. |
 | `updater.py` | ~148 | GitHub release updater for LHM DLLs |
-| `lhm_process.py` | ~310 | Portable LHM.exe process manager: downloads, launches hidden, loads PawnIO kernel driver for motherboard SuperIO sensors, cleans up on close |
-| `paths.py` | ~75 | Portable path resolution: `resource_dir()` (read-only bundled assets), `data_dir()` (writable per-user data with `%LOCALAPPDATA%` fallback), `cache_dir()`, `lib_dir()`, `lhm_standalone_dir()` |
-| `app_logger.py` | ~95 | Rotating file logger (with read-only location fallback to `%LOCALAPPDATA%\SysPeek\app.log`) |
+| `lhm_process.py` | ~280 | PawnIO driver installer (portable): downloads + runs `PawnIO_setup.exe -install` on launch, runs `uninstall.exe -uninstall -silent` on close. No permanent installation left behind |
+| `paths.py` | ~90 | Portable path resolution: `resource_dir()` (read-only bundled assets), `data_dir()` (writable per-user data with `%LOCALAPPDATA%` fallback), `cache_dir()`, `lib_dir()`, `pawnio_dir()` |
+| `app_logger.py` | ~95 | Rotating file logger (with read-only location fallback to `%LOCALAPPDATA%\SysDigger\app.log`) |
 | `runtime_hook.py` | ~15 | PyInstaller runtime hook: `os.chdir(exe_dir)` + `QT_PLUGIN_PATH` |
 | `GITHUB_SIGNING_GUIDE.md` | ~580 | Step-by-step GitHub + SignPath free signing guide for non-developers |
 
@@ -253,7 +253,7 @@ disk_benchmark, startup_impact
 
 ## Desktop Shortcut
 
-`install_desktop_shortcut.bat` creates `SysPeek.lnk` on Desktop pointing to `syspeek.pyw` with `app.ico`. Re-run after any path/name change.
+`install_desktop_shortcut.bat` creates `SysDigger.lnk` on Desktop pointing to `sysdigger.pyw` with `app.ico`. Re-run after any path/name change.
 
 ## Icon Generation
 
@@ -320,8 +320,8 @@ disk_benchmark, startup_impact
 - **H-4 lhm_process** `wait_for_driver()`/`is_driver_ready()`/`is_running` read `self._process` without lock — now capture local `proc = self._process` reference
 - **H-5 collectors** USB/Bluetooth/printer/audio collectors checked `_WMI_AVAILABLE` instead of `self._wmi_conn` — crashed if thread hadn't called `_init_wmi()`
 - **H-3 app** LHM.exe orphaned on rapid close during startup — `set_lhm_process(proc)` now called immediately after construction (before download/start)
-- **H-6 syspeek** UAC elevation broke when frozen — `elevate()` now detects `sys.frozen` and uses `sys.executable` directly; elevation failure shows MessageBox
-- **C-1 app_logger** Crashed on read-only location — `_resolve_log_dir()` falls back to `%LOCALAPPDATA%\SysPeek\app.log`; `RotatingFileHandler` wrapped in try/except
+- **H-6 SysDigger** UAC elevation broke when frozen — `elevate()` now detects `sys.frozen` and uses `sys.executable` directly; elevation failure shows MessageBox
+- **C-1 app_logger** Crashed on read-only location — `_resolve_log_dir()` falls back to `%LOCALAPPDATA%\SysDigger\app.log`; `RotatingFileHandler` wrapped in try/except
 - **C-1 portability** New `paths.py` module with `resource_dir()` / `data_dir()` for frozen-exe path resolution
 - **H-1 config** `load()` crashed on wrong-typed JSON values — construction now wrapped in `try/except (TypeError, ValueError)`
 - **config** UTF-8 encoding on `open()` calls (was locale-default cp1252)
@@ -329,17 +329,48 @@ disk_benchmark, startup_impact
 - **H-4 tools** powercfg energy/battery reports saved to wrong location (System32) → now uses `$env:TEMP` with `/output` flag
 - **M-1 gui** Pages not re-rendered after settings/theme change — now re-adds pages 0-11 to `_pages_ready` after clearing
 - **M-3 gui** `closeEvent` shutdown race — added `_closing` flag, checked in `_update_sensor_values`
-- **L-1 gui** Sidebar title "System Info" → "SysPeek"
-- **Packaging** New files: `paths.py`, `requirements.txt`, `syspeek.spec`, `runtime_hook.py`, `version.txt`, `build.ps1`
+- **L-1 gui** Sidebar title "System Info" → "SysDigger"
+- **Packaging** New files: `paths.py`, `requirements.txt`, `sysdigger.spec`, `runtime_hook.py`, `version.txt`, `build.ps1`
+
+### Audit fixes already applied (v4.12)
+- **C-1 lhm_process** `version.txt` never written after downloading LHM.exe → `is_downloaded()` always returned False → `start()` refused to launch LHM.exe → PawnIO driver never loaded → AMD CPU temp/power/clock sensors returned 0, motherboard SuperIO sensors missing. Now writes `version.txt` with `LHM_VERSION` after extraction.
+- **C-1 collectors** `set_lhm_process()` called `old.Close()` outside `_sensor_read_lock` → race with 2s `refresh_sensors` timer iterating the same Computer → crash or empty sensor results for one refresh cycle. Now holds `_sensor_read_lock` during `old.Close()`.
+- **M-1 collectors** WMI fallback sensor entries missing `"Type"` and `"Category"` keys → would crash GUI rendering if LHM unavailable and WMI fallback used. Added both keys to all WMI fallback entries.
+- **AMD Ryzen sensors** LHM 0.9.6 returns 0 MHz / 0 W for AMD Zen CPU Clock + Power (SMU limitation). Added `_apply_amd_cpu_fallbacks()` in `collectors.py:_collect_sensors()` that detects zero-value CPU Clock entries and replaces them with real per-core frequencies from `psutil.cpu_freq(percpu=True)`. Zero-value CPU Power entries are removed. No new dependencies, no kernel driver, fully portable.
+
+### Audit fixes already applied (v4.13) — Full codebase audit
+- **C-1 security gui** PowerShell injection via `__INPUT__` substitution — user input (product key, Wi-Fi profile name) was substituted directly into PowerShell single-quoted strings without escaping. A single quote `'` in the input would break out and execute arbitrary code (app runs as admin). Now escapes `'` → `''` (PowerShell single-quote escaping) in `_collect_text_input`.
+- **C-1 perf gui** `_search_items` unbounded growth — auto-refresh pages (Network @ 5s, Processes @ 5s) appended ~30-50 items per rebuild without ever discarding old entries, growing ~36k items/hour and slowing search to 100-300ms per keystroke. Added `_search_items_by_page` dict tracking per-page indices; `_discard_search_items_for_page()` called at top of `_render_page` and `_on_process_refreshed`.
+- **C-2 perf gui** Processes double-build every 5s — both QTableWidget (1200 items) and QTreeWidget (200 items + recursion) were built unconditionally on every refresh, even though only one tab is visible. Now only populates the visible tab's rows; `currentChanged` triggers a rebuild when the user switches tabs (with `_process_tab_rebuilding` re-entry guard + `blockSignals` during `setCurrentIndex`).
+- **C-1 correctness gui** `_make_card` ordering bug in `_populate_health` — `insertWidget(count-1, card)` assumes a stretch is the last item; when stretch was added AFTER cards (Health page), each new card was inserted before the previous one, reversing card order (Defender→Firewall→Activation→Disk SMART instead of Disk SMART→Defender→Firewall→Activation). Now adds stretch BEFORE any `_make_card` calls.
+- **C-1 crash collectors** H-5 anti-pattern survived in `_collect_power_plan` and `collect_vpn_status` — checked `_WMI_AVAILABLE` (module-level flag) instead of `self._wmi_conn` (thread-local). If `_init_wmi()` ran but `WMI()` failed, these methods would crash with `AttributeError: 'NoneType' object has no attribute 'Win32_Battery'`/`Win32_NetworkAdapter`. Now checks `self._wmi_conn` directly.
+- **C-1 correctness collectors** `_process_io_prev` stale pruning — computed `current_pids` from the top-N slice AFTER sorting, pruning every non-top-N PID. On the next refresh, non-top-N processes had `prev = None` and always reported 0 KB/s disk I/O. Now computes `current_pids` from the FULL process list BEFORE slicing.
+- **C-1 correctness collectors** Disk benchmark drive-relative path — `os.path.join("C:", "file")` produces `"C:file"` (relative to current dir on drive C), NOT `"C:\file"`. Benchmark wrote to the wrong location. Now uses `drive + os.sep`.
+- **M-1 gui** `closeEvent` taskkill had no timeout — could hang the window open indefinitely if `taskkill` itself hung. Now uses `timeout=5` + `except subprocess.TimeoutExpired`.
+- **M-2 gui** `_on_tool_clear` race condition — reset `_tool_stopped`/`_tool_stopping` while async kill was in progress, causing `_on_tool_finished` to show "COMPLETED SUCCESSFULLY" instead of "TERMINATED BY USER". Now only resets stop flags if no tool is running.
+- **M-3 perf collectors** Duplicate `psutil.process_iter` and `psutil.net_connections` syscalls — `collect_processes` and `collect_active_connections` each iterated all processes and called `net_connections` separately (~50-200ms each, duplicated every 5s). Added `_pid_name_cache` and `_net_conns_cache` shared between both methods.
+- **M-4 portability** `paths.py` module existed but was never imported — 17 sites across 8 files used `os.path.dirname(os.path.abspath(__file__))` for writable paths (config, cache, logs, LHM download), which breaks in frozen `--onedir` exe (`__file__` resolves to `_internal/`). Now all files import `paths.resource_dir()` / `paths.data_dir()` / `paths.cache_dir()` / `paths.lib_dir()` / `paths.lhm_standalone_dir()` / `paths.icon_path()` / `paths.icons_dir()`.
+- **M-5 collectors** AMD fallback regression — `self.data.hw_info = hw` was set AFTER `_collect_sensors()` (line 432), so `_apply_amd_cpu_fallbacks` read stale `self.data.hw_info` and the AMD vendor check failed, skipping the psutil clock fallback. Now sets `self.data.hw_info = hw` BEFORE calling `_collect_sensors()`.
+- **m-1 app** `winreg.OpenKey()` without `with` statement — handle leaked if `QueryValueEx` raised. Now uses `with winreg.OpenKey(...) as key:`.
+- **m-2 lhm_process/updater** Streaming HTTP responses not closed — `requests.get(..., stream=True)` without `with`/`close()`, connection lingered until GC. Now uses `with`/`try-finally close()`.
+- **m-3 app_logger** Stale log message "Windows System Information Viewer starting" → "SysPeek starting" (app renamed in v4.5, later "SysDigger starting" in v4.16).
+- **m-4 updater** `version.txt` written even when all DLL writes failed → `is_up_to_date()` would report "already up to date" despite stale DLLs. Now only writes `version.txt` if `written > 0`.
+- **m-5 lhm_process/updater** `version.txt` opened without `encoding="utf-8"` (was locale-default cp1252). Now uses `encoding="utf-8"` consistently.
+
+### Audit fixes already applied (v4.14) — PawnIO driver migration
+- **C-1 lhm_process** LHM 0.9.6 (Feb 2026) updated to PawnIO 2.2 which is now distributed as a separate installer (https://github.com/namazso/PawnIO.Setup). LHM.exe can no longer install the driver on its own — it expects PawnIO to be pre-installed. Rewrote `lhm_process.py` to download and run `PawnIO_setup.exe` v2.2.0 instead of launching LHM.exe. The installer uses the `-install` flag (same as LHM uses internally) for silent installation (~2.5s, idempotent).
+- **C-1 lhm_process** Portable mode: on `closeEvent`, runs `uninstall.exe -uninstall -silent` to remove `C:\Program Files\PawnIO` + `sc stop PawnIO` (best-effort). The driver stays in kernel memory until reboot (Windows limitation — becomes NOT_STOPPABLE after uninstall marks it for deletion), but re-install works cleanly on next launch.
+- **C-1 collectors** `set_lhm_process()` docstring updated — the driver is now installed by the standalone PawnIO installer, not by LHM.exe.
+- **paths** Added `pawnio_dir()` for the installer cache (`lib/pawnio/`). `lhm_standalone_dir()` kept for backward compatibility but no longer used.
 
 ## PyInstaller Packaging (v4.11)
 
 Build: `.\build.ps1` (installs deps, compile-checks, builds, signs)
 
-- **Spec**: `syspeek.spec` — `--onedir` mode (faster startup, lower AV false-positive)
-- **UAC**: `uac_admin=True` in EXE — manifest requests elevation, skips `syspeek.pyw` self-elevation
-- **Frozen detection**: `syspeek.pyw` checks `getattr(sys, "frozen", False)` — skips elevation relaunch when frozen
-- **Path resolution**: `paths.py` distinguishes `resource_dir()` (read-only `sys._MEIPASS`) from `data_dir()` (writable exe dir or `%LOCALAPPDATA%\SysPeek` fallback)
+- **Spec**: `sysdigger.spec` — `--onedir` mode (faster startup, lower AV false-positive)
+- **UAC**: `uac_admin=True` in EXE — manifest requests elevation, skips `sysdigger.pyw` self-elevation
+- **Frozen detection**: `sysdigger.pyw` checks `getattr(sys, "frozen", False)` — skips elevation relaunch when frozen
+- **Path resolution**: `paths.py` distinguishes `resource_dir()` (read-only `sys._MEIPASS`) from `data_dir()` (writable exe dir or `%LOCALAPPDATA%\SysDigger` fallback)
 - **Runtime hook**: `runtime_hook.py` sets `os.chdir(exe_dir)` + `QT_PLUGIN_PATH`
 - **Signing**: Set `$env:SIGN_CERT_THUMBPRINT` and run `build.ps1` — signs all exe/dll with `signtool.exe` + RFC 3161 timestamp
 - **Cert recommendation**: Azure Trusted Signing (~$10/mo), EV cert (immediate SmartScreen reputation), or **SignPath Foundation** (free for open-source — see `GITHUB_SIGNING_GUIDE.md`)
@@ -349,14 +380,14 @@ Build: `.\build.ps1` (installs deps, compile-checks, builds, signs)
 GitHub username: `stavros-it` (user ID: 151866740)
 Git identity: `Stavros Antoniou <151866740+stavros-it@users.noreply.github.com>` (noreply email)
 
-**State**: Initial commit created locally (`a53314f`, 74 files, 21,093 lines). Repo NOT yet created on GitHub — awaiting user to create `stavros-it/SysPeek` on github.com and push.
+**State**: Initial commit created locally (`a53314f`, 74 files, 21,093 lines). Repo NOT yet created on GitHub — awaiting user to create `stavros-it/SysDigger` on github.com and push.
 
 **Files added for GitHub:**
 - `README.md` — front-page project description (features, requirements, download link, project structure, docs links, code signing policy, privacy policy)
-- `LICENSE` — MIT License
+- `LICENSE` — Proprietary License (Copyright (c) 2026 Stavros Antoniou, All Rights Reserved)
 - `.gitignore` — excludes runtime artifacts (`cache/`, `app.log`, `config.json`, `lib/lhm_standalone/`, `build/`, `dist/`, `__pycache__/`, `tools source/SA_WinTools_RegBackup/`)
 - `.github/workflows/build-and-sign.yml` — GitHub Actions workflow (build → zip → submit to SignPath if secrets set → upload to release; falls back to unsigned zip if SignPath not configured)
-- `GITHUB_SIGNING_GUIDE.md` — step-by-step guide for GitHub setup + SignPath free signing (written for non-developer)
+- `GITHUB_SIGNING_GUIDE.md` — step-by-step guide for GitHub setup + code signing (written for non-developer). NOTE: SignPath free signing requires an OSI-approved open-source license (e.g. MIT); since the app is now proprietary, use Azure Trusted Signing (~$10/mo) or an OV/EV cert instead — see BUILD_GUIDE.md
 
 **Files removed (stale):**
 - `BUGS.md`, `IMPROVEMENTS.md` — merged into `bugsescalation.md` (stale duplicates)
@@ -369,12 +400,8 @@ Git identity: `Stavros Antoniou <151866740+stavros-it@users.noreply.github.com>`
 - `tools source/` (6 files) — `SA_WinTools_Lib.ps1` is referenced at runtime by `tools.py:43`; the `.diagcab` is bundled for the Install/Uninstall Fix tool
 - `icons/`, `app.ico`, `app_preview.png` — bundled into exe and shown in README
 
-**SignPath free signing workflow:**
-1. Apply at https://signpath.org/apply (requires public GitHub repo + MIT license)
-2. Set GitHub secrets: `SIGNPATH_API_TOKEN`, `SIGNPATH_ORG_ID`
-3. Publish a release (tag `v4.11` → push → draft release on GitHub)
-4. GitHub Actions builds → submits to SignPath → you approve at app.signpath.io → signed zip uploaded to release
-5. SmartScreen reputation builds over ~100 downloads (OV cert, not EV)
+**SignPath free signing workflow (NOT available — app is proprietary):**
+> SignPath free signing requires an OSI-approved open-source license. Since the app is now proprietary, this workflow is no longer applicable. Use Azure Trusted Signing (~$10/mo) or an OV/EV certificate instead.
 
 See `GITHUB_SIGNING_GUIDE.md` for full step-by-step instructions.
 
@@ -395,8 +422,14 @@ The UEFI/Secure Boot/TPM/Core Isolation collection code lives in `_collect_uefi_
 ### 17. Tool log must use NoWrap + as-needed scrollbars
 `_tool_log` (QPlainTextEdit) must have `setLineWrapMode(NoWrap)` and both scrollbars set to `ScrollBarAsNeeded`. Without this, long lines wrap and appear truncated. Horizontal scrollbar QSS must be styled (was vertical-only before).
 
-### 18. PowerShell scripts must use `Out-String -Width 4096`
-All PowerShell scripts in `tools.py` must use `Out-String -Width 4096` (not the default 80 or 500) to prevent wide table output truncation. The preamble must include `$FormatEnumerationLimit=-1` to prevent array/list truncation.
+### 18. PowerShell scripts — `Out-String -Width 4096` for TABLES only, streaming for native commands
+Two distinct output patterns in `tools.py`:
+
+- **Table output** (from `Format-Table`, `Format-List`, `Get-*` cmdlets that emit objects): MUST use `| Format-Table -AutoSize | Out-String -Width 4096 | Write-Output`. The `Out-String -Width 4096` is required because PowerShell's default 80-char width truncates wide tables. Buffering is acceptable here since table output is short (a few rows).
+
+- **Native command output** (from `sfc`, `dism`, `chkdsk`, `Optimize-Volume`, `powercfg`, `netsh`, `npm`, `pip`, `klist`, `net use`, etc.): MUST use `2>&1 | ForEach-Object { Write-Output $_ }` for live streaming. NEVER wrap these with `Out-String -Width 4096` — that buffers ALL output until the command exits, defeating live streaming for operations that take 60s–30min (SFC, DISM RestoreHealth, chkdsk /r, powercfg /energy). The user would see NOTHING in the log window for the entire duration.
+
+The preamble must include `$FormatEnumerationLimit=-1` to prevent array/list truncation.
 
 ### 19. COM init/uninit via `_com_context()` and `_wmi_namespace()` (v4.9)
 Short-lived COM usage (ad-hoc WMI namespaces, firewall COM dispatch) MUST use `with _com_context():` which pairs `CoInitialize`/`CoUninitialize` in a `finally`. Ad-hoc WMI namespace queries MUST use `with self._wmi_namespace("root/...") as conn:` which wraps `_com_context()` + creates + cleans up the WMI connection. The thread-local WMI connection (`_init_wmi()`) intentionally does NOT call `CoUninitialize` — the COM apartment lives for the thread's lifetime (one `CoInitialize` per collection thread, cleaned up by Windows on thread exit). Never fall back to another thread's WMI connection (B-11 fix: `self._wmi` removed, `_wmi_conn` returns thread-local only).
@@ -411,7 +444,7 @@ NEVER use `dict["key"]` direct access on collector data dicts (GPU, disk, RAM sl
 Tools that scan a location and let the user pick which items to delete use a `path_select` input type. The flow is:
 1. `_run_tool_mode` detects `input.type == "path_select"` and calls `_begin_path_select_flow` instead of the normal input/confirm/run path.
 2. The mode's `scan_script` runs through the standard `_run_powershell_tool` pipeline — output streams into the log panel so the user sees what was found. The scan script MUST emit a `__SCAN_BEGIN__` / `__SCAN_END__` block with one `size\tpath` row per line (or `size\tid\tlabel` when `id_col=True`, e.g. Appx where the FullName differs from the display name).
-3. `_on_tool_finished` checks `self._path_select_pending`. If set, it parses the captured log (`_tool_log.toPlainText()`), shows a multi-select checkbox dialog (`_path_select_dlg`), and (if confirmed) substitutes `__PATHS__` into the mode's `script` and launches a second `_run_powershell_tool` call for the actual cleanup.
+3. `_on_tool_finished` checks `self._path_select_pending`. If set, it emits a SCAN COMPLETE banner, parses the captured log (`_tool_log.toPlainText()`), shows a multi-select checkbox dialog (`_path_select_dlg`), and (if confirmed) substitutes `__PATHS__` into the mode's `script` and launches a second `_run_powershell_tool` call for the actual cleanup (with `(cleaning N item(s)...)` suffix in the label).
 4. Critical-path blocklist (`_is_critical_path`) is applied to filesystem paths: `C:\Windows`, `C:\Program Files*`, `C:\ProgramData`, `C:\$Windows.~*`, `C:\Recovery`, user profile root, and any path containing `\Microsoft\` are filtered out and never shown in the dialog. Set `blocklist: False` on the spec (e.g. for Appx, which uses `Remove-AppxPackage` instead of file deletion) to disable.
 
 `_path_select_pending` MUST be cleared in `_on_tool_stop`, `_on_tool_clear`, and on every cancel path inside `_on_tool_finished`. If left set, the next non-path_select tool's finished signal would misfire the dialog.
@@ -425,18 +458,42 @@ Tools that scan a location and let the user pick which items to delete use a `pa
 
 Mode tracking (`_tool_running_mode`, `_tool_running_name`) is set in `_run_tool_mode` / `_begin_path_select_flow` and cleared in `_on_tool_finished`, `_on_tool_stop`, `_on_tool_clear`. `closeEvent` still uses immediate `taskkill /F /T` (no grace period — app is exiting).
 
-### 24. LHM.exe portable bridge for motherboard sensors (v4.11)
-The DLL-based sensor collection (`sensors.py` + `collectors.py:_collect_sensors`) reads CPU/GPU sensors via PCI config space and ADL, but CANNOT read motherboard SuperIO sensors (fan RPM, voltages, VRM temps) without a kernel driver. The standalone `LibreHardwareMonitor.exe` loads the PawnIO kernel driver, which gives the DLL access to SuperIO chips.
+### 24. PawnIO kernel driver for motherboard + CPU sensors (v4.14)
+The DLL-based sensor collection (`sensors.py` + `collectors.py:_collect_sensors`) reads CPU/GPU sensors via PCI config space and ADL, but CANNOT read motherboard SuperIO sensors (fan RPM, voltages, VRM temps) or AMD CPU MSR registers (clock, power, temperature) without the PawnIO kernel driver.
 
-**Flow:**
-1. `app.py:main()` launches a background thread that calls `LhmProcess.ensure_downloaded()` (downloads LHM.exe v0.9.6 to `lib/lhm_standalone/`, cached), then `start()` (launches hidden with `SW_HIDE`), then `wait_for_driver(timeout=20s)` (polls `sc query PawnIO` until RUNNING), then `collector.set_lhm_process(proc)`.
-2. `set_lhm_process()` invalidates `self._lhm_computer = None` (under `_lhm_lock`) so the next `_collect_sensors()` call recreates the `Computer` object — now with the PawnIO driver available, so `computer.Hardware` includes the SuperIO subhardware (e.g. Nuvoton NCT6687D) with all motherboard sensors.
-3. On `closeEvent`, `lhm_proc.stop()` kills LHM.exe (`taskkill /F /T /PID`) and calls `_cleanup_driver_services()` which sends `sc stop` + `sc delete` for `PawnIO`, `WinRing0_1_2_0`, `WinRing0`.
+**Background:** Starting with LHM 0.9.6 (Feb 2026), PawnIO is distributed as a separate installer (https://github.com/namazso/PawnIO.Setup) and is no longer bundled inside the LHM.exe release ZIP. LHM.exe and the DLL-based `Computer.Open()` both expect PawnIO to already be installed. Previous versions of SysDigger launched LHM.exe hidden to load the driver, but this no longer works with LHM 0.9.6.
 
-**Kernel driver cleanup limitation:** `sc stop` may fail for kernel drivers that don't support unloading (the PawnIO driver remains in kernel memory until reboot). `sc delete` still succeeds and marks the service as `Disabled` — so it won't start on next boot and will be fully removed by Windows on reboot. This is a Windows limitation, not a bug. The driver being loaded is harmless (just provides I/O port access). On next SysPeek launch, if the driver is still loaded, sensors work immediately; if not, LHM.exe creates a new service.
+**Portable flow (install on launch, uninstall on close):**
+1. `app.py:main()` launches a background thread that calls `LhmProcess.ensure_downloaded()` (downloads `PawnIO_setup.exe` v2.2.0 from GitHub to `lib/pawnio/`, cached), then `start()` (runs `PawnIO_setup.exe -install` — silent, ~2.5s, idempotent: works whether the service is absent, stopped, or already running), then `wait_for_driver(timeout=20s)` (polls `sc query PawnIO` until RUNNING), then `collector.set_lhm_process(proc)`.
+2. `set_lhm_process()` invalidates `self._lhm_computer = None` (under `_lhm_lock`) so the next `_collect_sensors()` call recreates the `Computer` object — now with the PawnIO driver available, so `computer.Hardware` includes the SuperIO subhardware (e.g. Nuvoton NCT6687D) with all motherboard sensors AND the AMD CPU sensors (Tctl/Tdie temperature, per-core clocks, per-core SMU power, VID/SVI2 voltages).
+3. On `closeEvent`, `lhm_proc.stop()` runs `uninstall.exe -uninstall -silent` (removes `C:\Program Files\PawnIO`) + `sc stop PawnIO` (best-effort — may fail if the driver is NOT_STOPPABLE after uninstall marks it for deletion). Only legacy WinRing0 services are `sc delete`d.
 
-**Config patching:** `_patch_config()` injects `<userSettings><wmiProvider>True</wmiProvider>` into `LibreHardwareMonitor.exe.config` after extraction. Although we don't use WMI (the DLL approach works once the driver is loaded), enabling WMI ensures LHM.exe fully initializes its sensor infrastructure.
+**Residue after close:** The driver stays in kernel memory until reboot (Windows kernel driver limitation — the driver becomes NOT_STOPPABLE after the uninstaller marks it for deletion). This is harmless (just provides I/O port access). `C:\Program Files\PawnIO` is gone immediately. The service entry is removed on reboot. On next app launch, `start()` re-runs `PawnIO_setup.exe -install` which handles the stopped/marked-for-deletion service cleanly.
 
-**WMI bridge not used:** LHM's WMI namespace `root/LibreHardwareMonitor` requires the WMI provider to be enabled AND the LHM.exe process to register it with WMI. Even with `wmiProvider=True` in the config, the namespace wasn't available in testing. The DLL approach works directly once the PawnIO driver is loaded, so WMI is unnecessary.
+**Installer silent mode:** The PawnIO installer supports the `-install` flag (used by LHM itself). `/S`, `/silent`, `/quiet` all return exit 87. The uninstaller (`uninstall.exe` placed at `C:\Program Files\PawnIO\uninstall.exe`) supports `-uninstall -silent`.
 
-**LHM.exe is NOT installed:** it's cached as files in `lib/lhm_standalone/` (not registered with Windows). The PawnIO driver service IS created (kernel drivers can't be loaded without a service), but it's marked for deletion on close. Nothing persists across reboots.
+**Result:** On MSI B550 GAMING PLUS with AMD Ryzen 7 5700X:
+- 7 motherboard temperatures (CPU, System, VRM MOS, PCH, CPU Socket, PCIe x1, M2 #1)
+- 7 fan RPMs (CPU Fan, Pump Fan, System Fan #1-6) + 7 fan controls (PWM duty)
+- 14 motherboard voltages (+12V, +5V, Vcore, DIMM, CPU I/O, etc.)
+- CPU temps: Tctl/Tdie, CCD1 (Tdie)
+- CPU clocks: per-core (4650 MHz live boost), Cores (Average), Bus Speed
+- CPU power: per-core SMU
+- CPU voltages: per-core VID, Core (SVI2 TFN), SoC (SVI2 TFN)
+
+### 25. Tool execution log — GUI-side status banners (v4.11)
+The Tools page execution log (`_tool_log`) shows GUI-side status banners in addition to the streamed PowerShell output. These banners are emitted by the main thread (NOT the worker thread) via `_emit_log_line()`, which appends to both the GUI log AND the on-disk log file (`%TEMP%\SA_WinTools_Active.log`) so "Open Log" shows the same content as the GUI.
+
+**Banner format:**
+- Start: `[HH:MM:SS] ===== STARTED: <tool_name> - <mode_label> =====` — emitted in `_run_powershell_tool` after clearing the log, BEFORE the worker starts.
+- End (success): `[HH:MM:SS] ===== COMPLETED SUCCESSFULLY (X.Xs, exit 0) =====` — emitted in `_on_tool_finished` when rc == 0.
+- End (errors): `[HH:MM:SS] ===== COMPLETED WITH ERRORS (X.Xs, exit N) =====` — emitted when rc != 0.
+- End (terminated): `[HH:MM:SS] ===== TERMINATED BY USER (X.Xs) =====` — emitted when `_tool_stopped` is True.
+- Scan complete (path_select phase 1): `[HH:MM:SS] ===== SCAN COMPLETE (X.Xs, exit N) - pick items to proceed =====` — emitted before the multi-select dialog.
+- Cancel paths: `[!] Cancelled by user - no items selected.` / `[!] Cancelled by user - no cleanup performed.`
+
+**Invariants:**
+1. `_tool_worker` MUST open the on-disk log in append mode (`"a"`) — `_run_powershell_tool` already truncated it and wrote the STARTED banner. If the worker opens in `"w"` mode, it wipes the banner from disk (the GUI log keeps it, but "Open Log" would lose it).
+2. `_tool_start_time` MUST be set in `_run_powershell_tool` (main thread) BEFORE the worker starts, so `_on_tool_finished` can compute duration. Reset to `0.0` in `_on_tool_clear`.
+3. The worker MUST NOT filter out blank lines, `SA WinTools -` headers, or `=====` separator lines from the streamed output — these provide visual structure (section breaks, tool name banners, dividers). Earlier versions stripped them for "compactness" but that made the log a wall of text.
+4. Long-running scan scripts (`_SCAN_APPDATA_LOCAL`, `_SCAN_APPDATA_ROAMING`, `_SCAN_PROFILE_FILES`, `_SCAN_APPX`, `_DISK_FOLDER_MAP` Phase 2, `_DISK_DUPLICATES` Phase 3) MUST emit per-item or per-N-items progress messages so the user sees activity during multi-second scans.

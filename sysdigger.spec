@@ -1,8 +1,8 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller spec for SysPeek.
+"""PyInstaller spec for SysDigger.
 
-Build:  pyinstaller syspeek.spec --noconfirm --clean
-Output: dist/SysPeek/SysPeek.exe  (--onedir, faster startup)
+Build:  pyinstaller sysdigger.spec --noconfirm --clean
+Output: dist/SysDigger/SysDigger.exe  (--onedir, faster startup)
 
 For enterprise deployment, sign the exe + all DLLs with signtool.exe
 (see build.ps1).
@@ -60,7 +60,7 @@ if os.path.isdir(os.path.join(_base, "lib")):
 
 # -- Analysis ---------------------------------------------------------------
 a = Analysis(
-    ["syspeek.pyw"],
+    ["sysdigger.pyw"],
     pathex=[_base],
     binaries=binaries,
     datas=datas,
@@ -78,7 +78,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name="SysPeek",
+    name="SysDigger",
     console=False,
     icon="app.ico" if os.path.exists("app.ico") else None,
     uac_admin=True,
@@ -90,7 +90,7 @@ coll = COLLECT(
     a.binaries,
     a.zipfiles,
     a.datas,
-    name="SysPeek",
+    name="SysDigger",
     strip=False,
     upx=True,
     upx_exclude=[

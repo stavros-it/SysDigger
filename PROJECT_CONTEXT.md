@@ -1,4 +1,4 @@
-# Project Context — SysPeek
+# Project Context — SysDigger
 
 > **Purpose of this file:** Give any AI model (or developer) a complete,
 > self-contained understanding of what this project is, how it's structured,
@@ -9,7 +9,7 @@
 
 ## 1. What This App Does
 
-**SysPeek** is a Windows desktop application that gathers and displays detailed
+**SysDigger** is a Windows desktop application that gathers and displays detailed
 system information in a modern, dark-themed GUI. It shows:
 
 - **Operating System** — name, edition, version, build, architecture, hostname, user, domain/workgroup, install date, boot time, uptime
@@ -22,7 +22,7 @@ system information in a modern, dark-themed GUI. It shows:
 - **Health** — disk SMART status, Windows Defender, firewall, Windows activation status, battery wear
 - **Diagnostics** — event logs (System + Application, 200 each, color-coded), BSOD history, crash dump settings, system restore points, environment variables, PATH entries, DirectX/D3D feature levels (via ctypes `D3D11CreateDevice`), power plan
 - **Speed Test** — download/upload via Cloudflare (99MB/50MB), bufferbloat grade (A-F)
-- **Windows Tools** — 26 maintenance utilities across 4 categories (System Repair, Maintenance, Hardware & Diagnostics, System Info & Status) powered by PowerShell subprocess execution with live-streamed output: SFC, DISM (Clean/Repair), WinRE Manager, Cleanup, Disk Analyzer (large files / top folders / recursive folder size map / duplicate file finder + scan-then-pick cleanup of biggest AppData folders or user profile files), Appx Manager (uninstall Appx packages by size), Dev Cache Cleaner (npm/pip cache + uv / LM Studio / Vortex / RSI Launcher updater folders), Hibernate Manager (enable/disable), Reset Spooler, Install/Uninstall repair, Flush Network (6 modes), Trim SSD, Check HDD, Device Query (3 modes), Services Check, Memory Diagnostic (GUI + schedule on reboot), Time Sync, Activation, Wi-Fi, Firewall, Power & System, Autopilot Hash, Hosts File Editor, Windows Update (scan + install)
+- **Windows Tools** — 27 maintenance utilities across 4 categories (System Repair, Maintenance, Hardware & Diagnostics, System Info & Status) powered by PowerShell subprocess execution with live-streamed output: SFC, DISM (Clean/Repair), WinRE Manager, Cleanup, Disk Analyzer (large files / top folders / recursive folder size map / duplicate file finder + scan-then-pick cleanup of biggest AppData folders or user profile files), Appx Manager (uninstall Appx packages by size), Dev Cache Cleaner (npm/pip cache + uv / LM Studio / Vortex / RSI Launcher updater folders), Hibernate Manager (enable/disable), Reset Spooler, Install/Uninstall repair, Flush Network (6 modes), Trim SSD, Check HDD, Device Query (3 modes), Services Check, Memory Diagnostic (GUI + schedule on reboot), Time Sync, Activation, Wi-Fi, Firewall, Power & System, Autopilot Hash, Hosts File Editor, Windows Update (scan + install), UEFI BIOS Reboot (shutdown /r /fw /t 0)
 
 The app has a **live search** feature that filters across all fields instantly,
 **copy to clipboard** from any table (Ctrl+C or right-click), and
@@ -75,8 +75,8 @@ Version tracked in `lib/version.txt`.
 ## 3. File Structure
 
 ```
-SysPeek/
-├── syspeek.pyw          # Entry point — double-click to run. Self-elevates to admin, no console
+SysDigger/
+├── sysdigger.pyw          # Entry point — double-click to run. Self-elevates to admin, no console
 ├── app.py                # Main entry — creates QApplication, Collector, InfoWindow
 ├── app_logger.py         # Centralized logging — rotating file handler writing to app.log
 ├── config.py             # Application config (config.json) — 15 settings: refresh intervals, process top N, theme, font, sensor/hardware types, sparkline samples, speed test params, cache TTL, window geometry
@@ -87,7 +87,7 @@ SysPeek/
 ├── paths.py              # Portable path resolution — resource_dir() / data_dir() for frozen-exe support
 ├── updater.py            # GitHub release updater for LHM DLLs
 ├── helpers.py            # Formatting & utility helpers (fmt_bytes, fmt_speed, reg_value, etc.)
-├── tools.py              # Windows maintenance tools catalogue: 4 categories / 26 tools / 57 modes (PowerShell scripts ported verbatim from `tools source/`, plus v4.11 scan-then-pick cleanup scripts)
+├── tools.py              # Windows maintenance tools catalogue: 4 categories / 27 tools / 58 modes (PowerShell scripts ported verbatim from `tools source/`, plus v4.11 scan-then-pick cleanup scripts)
 ├── install_deps.bat      # Installs all pip packages, verifies imports, checks for DLLs
 ├── app.log               # Application log (rotating, 2MB max, 3 backups)
 ├── config.json           # User settings (15 settings: refresh intervals, process top N, theme, font, compact/progress, sensor/hardware types, sparkline samples, speed test params, cache TTL, window geometry)
@@ -108,8 +108,8 @@ SysPeek/
 │   ├── SA_WinTools.ps1               # PowerShell GUI entry point (not run by this app — superseded by the Tools tab)
 │   ├── SA_WinTools_Buttons.ps1       # All 20 button definitions + factory helpers (scripts ported into tools.py)
 │   ├── SA_WinTools_Lib.ps1           # Shared backend library (dot-sourced by Install/Uninstall tool scripts at runtime)
-│   ├── SA_Launcher.bat               # Standalone launcher (not used by SysPeek)
-│   ├── aistart.bat                   # Standalone launcher (not used by SysPeek)
+│   ├── SA_Launcher.bat               # Standalone launcher (not used by SysDigger)
+│   ├── aistart.bat                   # Standalone launcher (not used by SysDigger)
 │   └── MicrosoftProgram_Install_and_Uninstall.meta.diagcab  # Microsoft troubleshooter (bundled for Install/Uninstall Fix tool)
 ├── roadmap.md            # Feature roadmap and version history
 └── PROJECT_CONTEXT.md    # This file
@@ -283,7 +283,7 @@ reuses the verbatim PowerShell scripts and runs them as hidden-window
 subprocesses with stdout streamed live into a Qt log panel.
 
 **Tool catalogue (`tools.py`):**
-- 4 categories, 26 tools, 57 modes total
+- 4 categories, 27 tools, 58 modes total
 - Each mode carries: `label`, `script` (PowerShell body), and optional
   flags: `confirm` (destructive — show Yes/No dialog first), `reboot`
   (show "reboot required" notice after), `input` (collect user input
@@ -378,7 +378,7 @@ Font sizes: page title 24px, nav buttons 15px, card titles 14px, row text
 
 ---
 
-## 5. Launcher (syspeek.pyw)
+## 5. Launcher (sysdigger.pyw)
 
 - Runs via `pythonw.exe` — no console window
 - **Self-elevates to admin** via `ShellExecuteW` with "runas" verb (UAC prompt)
@@ -527,7 +527,7 @@ install_deps.bat
 ```
 
 ### Launch the app
-Double-click `syspeek.pyw` (or run `pythonw syspeek.pyw`).
+Double-click `sysdigger.pyw` (or run `pythonw sysdigger.pyw`).
 
 A UAC prompt will appear (admin needed for sensor data).
 

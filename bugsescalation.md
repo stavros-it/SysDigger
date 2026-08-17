@@ -1,4 +1,4 @@
-# bugsescalation.md — SysPeek Audit Escalation Tracker
+# bugsescalation.md — SysDigger Audit Escalation Tracker
 
 > Merged from BUGS.md (30 findings) + IMPROVEMENTS.md (23 recommendations).
 > Full-app code audit conducted on v4.8. Items verified against source.

@@ -23,14 +23,15 @@ from PySide6.QtWidgets import (
     QDialogButtonBox, QFileDialog, QFormLayout, QFrame, QGridLayout,
     QHBoxLayout, QHeaderView, QLabel, QLineEdit, QListWidget,
     QListWidgetItem, QLayout, QMainWindow, QMenu, QMessageBox, QPlainTextEdit,
-    QProgressBar, QPushButton, QRadioButton, QScrollArea, QSizePolicy, QSpinBox,
-    QStackedWidget, QTableWidget, QTableWidgetItem, QTabWidget,
-    QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
+    QProgressBar, QProgressDialog, QPushButton, QRadioButton, QScrollArea,
+    QSizePolicy, QSpinBox, QStackedWidget, QTableWidget, QTableWidgetItem,
+    QTabWidget, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
 )
 
 from app_logger import get_logger
 from collectors import Collector
 from config import get_config, reload_config
+from paths import icon_path, icons_dir, lib_dir, data_dir
 from sensors import SENSOR_TYPE_ORDER, fmt_sensor_value
 from tools import CATEGORIES as TOOL_CATEGORIES, PREAMBLE as TOOL_PREAMBLE
 from tools import resolve_placeholders as resolve_tool_placeholders
@@ -180,7 +181,8 @@ class _Sparkline(QWidget):
         n = len(vals)
         vmin = min(vals)
         vmax = max(vals)
-        if vmax == vmin:
+        flat = vmax == vmin
+        if flat:
             vmax = vmin + 1
         pad = 6
         gw = w - pad * 2
@@ -189,7 +191,10 @@ class _Sparkline(QWidget):
         poly = QPolygon()
         for i, v in enumerate(vals):
             x = pad + int(gw * i / max(n - 1, 1))
-            y = pad + gh - int(gh * (v - vmin) / (vmax - vmin))
+            if flat:
+                y = pad + gh // 2
+            else:
+                y = pad + gh - int(gh * (v - vmin) / (vmax - vmin))
             poly.append(QPoint(x, y))
 
         fill = QColor(self._color)
@@ -256,6 +261,11 @@ QLabel#app-title {{
 QLabel#hostname {{
     color: {_TEXT_DIM};
     font-size: 12px;
+}}
+QLabel#copyright {{
+    color: {_TEXT_DIM};
+    font-size: 10px;
+    padding: 4px 0px 0px 0px;
 }}
 QPushButton#nav-btn {{
     text-align: left;
@@ -881,6 +891,15 @@ _ALL_HARDWARE_TYPES = [
     "Battery", "Memory", "Network", "PSU",
 ]
 
+_SENSOR_SPARK_COLORS: dict[str, str] = {
+    "Temperature": "#e07b7b",
+    "Clock": "#60cdff",
+    "Power": "#ffd166",
+    "Load": "#7fde7f",
+    "Fan": "#c0c0c0",
+    "Voltage": "#b388ff",
+}
+
 
 # ---------------------------------------------------------------------------
 #  Flow layout — wraps items left-to-right, top-to-bottom (like text)
@@ -1463,17 +1482,20 @@ class InfoWindow(QMainWindow):
         super().__init__()
         self.setAutoFillBackground(True)
         self.collector = collector
-        self.setWindowTitle("SysPeek  ·  Copyright (C) Stavros Antoniou")
+        self.setWindowTitle("SysDigger  ·  Copyright (C) Stavros Antoniou")
         # App icon: shown in the title bar (top-left) and Windows taskbar.
-        _icon_path = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), "app.ico"
-        )
+        _icon_path = icon_path()
         if os.path.exists(_icon_path):
             self.setWindowIcon(QIcon(_icon_path))
         self.resize(1100, 780)
         self.setMinimumSize(860, 600)
 
         self._search_items: list[dict[str, str]] = []
+        # Per-page search-item indices so a page can discard its stale
+        # entries when re-rendered.  Without this, auto-refresh pages
+        # (Network @ 5s, Processes @ 5s) leak ~30-50 items per rebuild,
+        # growing ~36k items/hour and slowing search to a crawl.
+        self._search_items_by_page: dict[int, list[int]] = {}
         self._current_page = 0
         self._pages_ready: set[int] = set()
         self._collecting = True
@@ -1507,6 +1529,10 @@ class InfoWindow(QMainWindow):
         self._sensor_refresh_timer = None
         self._process_refresh_timer = None
         self._process_refreshing = False
+        # Re-entry guard for Processes tab lazy-build: when the user
+        # switches tabs we rebuild the page to construct the newly-visible
+        # tab; this flag prevents infinite recursion during that rebuild.
+        self._process_tab_rebuilding = False
         self._speed_testing = False
         self._bufferbloat_testing = False
         self._tool_running = False
@@ -1521,6 +1547,9 @@ class InfoWindow(QMainWindow):
         self._tool_running_mode: dict | None = None
         self._tool_running_name: str = ""
         self._tool_stopping = False
+        self._tool_stopped = False
+        self._pending_tool_reboot = False
+        self._tool_start_time: float = 0.0
 
         self._build_ui()
         self._load_window_settings()
@@ -1579,7 +1608,7 @@ class InfoWindow(QMainWindow):
         sb_layout.setContentsMargins(12, 18, 0, 18)
         sb_layout.setSpacing(2)
 
-        app_title = QLabel("SysPeek")
+        app_title = QLabel("SysDigger")
         app_title.setObjectName("app-title")
         sb_layout.addWidget(app_title)
         sb_layout.addSpacing(16)
@@ -1587,9 +1616,8 @@ class InfoWindow(QMainWindow):
         self._nav_group = QButtonGroup(self)
         self._nav_group.setExclusive(True)
         self._nav_buttons: list[QPushButton] = []
-        _nav_icon_dir = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), "icons", "nav"
-        )
+        _nav_icon_dir = icons_dir()
+        _nav_icon_dir = os.path.join(_nav_icon_dir, "nav")
         for i, (short, _) in enumerate(self.PAGES):
             btn = QPushButton(short)
             btn.setObjectName("nav-btn")
@@ -1613,9 +1641,7 @@ class InfoWindow(QMainWindow):
         sb_layout.addWidget(self._host_label)
         sb_layout.addSpacing(12)
 
-        self._updater = LibraryUpdater(
-            os.path.join(os.path.dirname(os.path.abspath(__file__)), "lib")
-        )
+        self._updater = LibraryUpdater(lib_dir())
         self._updater.signals.status.connect(self._on_update_status)
         self._updater.signals.finished.connect(self._on_update_finished)
 
@@ -1630,6 +1656,11 @@ class InfoWindow(QMainWindow):
         self._update_status.setObjectName("update-status")
         self._update_status.setWordWrap(True)
         sb_layout.addWidget(self._update_status)
+
+        self._copyright_label = QLabel("© 2026 Stavros Antoniou")
+        self._copyright_label.setObjectName("copyright")
+        self._copyright_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        sb_layout.addWidget(self._copyright_label)
 
         root.addWidget(sidebar)
 
@@ -1692,7 +1723,7 @@ class InfoWindow(QMainWindow):
         self._about_btn = QPushButton("About")
         self._about_btn.setObjectName("action-btn")
         self._about_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._about_btn.setToolTip("About SysPeek")
+        self._about_btn.setToolTip("About SysDigger")
         self._about_btn.clicked.connect(self._on_about_clicked)
         topbar.addWidget(self._about_btn)
 
@@ -1899,12 +1930,16 @@ class InfoWindow(QMainWindow):
                     bar_labels.append(None)
 
             if page_idx >= 0:
+                idx = len(self._search_items)
                 self._search_items.append({
                     "page": str(page_idx),
                     "section": section,
                     "key": key,
                     "value": value,
                 })
+                self._search_items_by_page.setdefault(
+                    page_idx, []
+                ).append(idx)
 
         parent_layout.insertWidget(parent_layout.count() - 1, card)
 
@@ -2041,6 +2076,7 @@ class InfoWindow(QMainWindow):
         self._update_progress_bar()
         self._search.clear()
         self._search_items.clear()
+        self._search_items_by_page.clear()
         self._pages_ready.clear()
         self._sensor_value_labels.clear()
         self._sensor_minmax.clear()
@@ -2246,9 +2282,45 @@ class InfoWindow(QMainWindow):
             return
         self._render_page(page_idx)
 
+    def _discard_search_items_for_page(self, page_idx: int) -> None:
+        """Remove all search items previously registered for *page_idx*.
+
+        Search items are appended by ``_make_card`` on every render.  If a
+        page re-renders (auto-refresh, manual refresh, settings/theme
+        change) without first discarding the old entries, the list grows
+        unbounded — ~30-50 items per Network/Processes rebuild, every 5s.
+        """
+        old_indices = self._search_items_by_page.pop(page_idx, None)
+        if not old_indices:
+            return
+        # Build a set for O(1) membership test, then rebuild the list
+        # without the stale entries.  Indices are unique per page and are
+        # never reused between renders (a fresh list is appended each time).
+        drop = set(old_indices)
+        self._search_items = [
+            item for i, item in enumerate(self._search_items)
+            if i not in drop
+        ]
+        # The indices in _search_items_by_page for OTHER pages are now
+        # invalidated by the compaction above; rebuild them by scanning the
+        # remaining items.  This is O(N) but only runs on re-render, not
+        # on every keystroke.
+        new_by_page: dict[int, list[int]] = {}
+        for i, item in enumerate(self._search_items):
+            try:
+                p = int(item.get("page", -1))
+            except (TypeError, ValueError):
+                continue
+            new_by_page.setdefault(p, []).append(i)
+        self._search_items_by_page = new_by_page
+
     def _render_page(self, page_idx: int) -> None:
         """Actually render a page's content (called by _on_page_ready
         and _on_nav_clicked)."""
+        # Drop any search items previously registered for this page so the
+        # populate call starts from a clean slate.  This prevents unbounded
+        # growth on auto-refresh pages (Network/Processes rebuild every 5s).
+        self._discard_search_items_for_page(page_idx)
         try:
             if page_idx == 0:
                 self._populate_os()
@@ -2626,21 +2698,27 @@ class InfoWindow(QMainWindow):
         except Exception:
             pass
 
-        # Temperature sparklines on Sensors page (data + widgets)
-        for entry in sensors.get("temperatures", []):
-            src = entry.get("Source", entry.get("Category", "Other"))
-            name = entry.get("Name", "")
-            val = entry.get("Value", 0.0)
-            skey = (src, "Temperature", name)
-            if skey not in self._sensor_spark_data:
-                self._sensor_spark_data[skey] = []
-            self._sensor_spark_data[skey].append(val)
-            max_sp = get_config().sparkline_max_samples
-            if len(self._sensor_spark_data[skey]) > max_sp:
-                self._sensor_spark_data[skey].pop(0)
-            ssp = self._sensor_sparklines.get(skey)
-            if ssp is not None:
-                ssp.add_sample(val)
+        # Sensor sparklines on Sensors page (data + widgets) — all
+        # chartable sensor types (Temperature, Clock, Power, Load, Fan,
+        # Voltage), not just Temperature.
+        max_sp = get_config().sparkline_max_samples
+        for stype in self._SENSOR_TYPES:
+            if stype not in _SENSOR_SPARK_COLORS:
+                continue
+            skey_pl = self._STYPE_TO_KEY[stype]
+            for entry in sensors.get(skey_pl, []):
+                src = entry.get("Source", entry.get("Category", "Other"))
+                name = entry.get("Name", "")
+                val = entry.get("Value", 0.0)
+                skey = (src, stype, name)
+                if skey not in self._sensor_spark_data:
+                    self._sensor_spark_data[skey] = []
+                self._sensor_spark_data[skey].append(val)
+                if len(self._sensor_spark_data[skey]) > max_sp:
+                    self._sensor_spark_data[skey].pop(0)
+                ssp = self._sensor_sparklines.get(skey)
+                if ssp is not None:
+                    ssp.add_sample(val)
 
     # -- Page population ---------------------------------------------------- #
     @staticmethod
@@ -2704,8 +2782,12 @@ class InfoWindow(QMainWindow):
     def _on_process_refreshed(self) -> None:
         self._process_refreshing = False
         if self._current_page == 5:
+            # Discard stale search items before re-populating; otherwise
+            # the 5s auto-refresh leaks ~200 entries per cycle.
+            self._discard_search_items_for_page(5)
             self._populate_processes()
         if self._current_page == 3:
+            self._discard_search_items_for_page(3)
             self._populate_network()
 
     # -- Speed test --------------------------------------------------------- #
@@ -2926,8 +3008,7 @@ class InfoWindow(QMainWindow):
         cached = cls._category_icon_cache.get(key)
         if cached is not None:
             return cached
-        path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                            "icons", f"{key}.png")
+        path = os.path.join(icons_dir(), f"{key}.png")
         if not os.path.exists(path):
             return None
         pm = QPixmap(path)
@@ -3481,11 +3562,53 @@ class InfoWindow(QMainWindow):
         self._pending_tool_reboot = reboot
         self._set_tool_buttons_enabled(False)
         self._tool_log.clear()
+        # Emit a start banner to the log so the user can see what is
+        # running and when it started. The banner is written here (main
+        # thread) so it appears before any streamed output from the worker.
+        # We also truncate the on-disk log file and write the banner to it
+        # so the "Open Log" view matches the GUI log.
+        self._tool_start_time = time.monotonic()
+        banner_lines = [
+            "",
+            f"[{self._tool_ts()}] ===== STARTED: {label} =====",
+            "",
+        ]
+        for line in banner_lines:
+            self._tool_log.appendPlainText(line)
+        self._tool_log.ensureCursorVisible()
+        try:
+            with open(self._tool_log_path, "w", encoding="utf-8") as logf:
+                for line in banner_lines:
+                    logf.write(line + "\n")
+        except Exception:
+            pass
         self._tool_status_lbl.setText(f"RUNNING: {label}")
         self._status_label.setText(f"Tools: running {label}")
         threading.Thread(
             target=self._tool_worker, args=(label, script), daemon=True
         ).start()
+
+    @staticmethod
+    def _tool_ts() -> str:
+        """Timestamp string for log banners (HH:MM:SS)."""
+        return datetime.datetime.now().strftime("%H:%M:%S")
+
+    def _emit_log_line(self, line: str) -> None:
+        """Append a line to the tool log and the on-disk log file.
+
+        Used for GUI-side status banners (COMPLETED / FAILED /
+        TERMINATED) that are emitted from the main thread, outside the
+        streaming worker loop. The file is opened in append mode so the
+        banner follows the streamed output that the worker already wrote.
+        """
+        if self._tools_built:
+            self._tool_log.appendPlainText(line)
+            self._tool_log.ensureCursorVisible()
+        try:
+            with open(self._tool_log_path, "a", encoding="utf-8") as logf:
+                logf.write(line + "\n")
+        except Exception:
+            pass
 
     def _tool_worker(self, label: str, script: str) -> None:
         """Run the PowerShell script via a temp .ps1 file and stream output."""
@@ -3517,24 +3640,35 @@ class InfoWindow(QMainWindow):
                 creationflags=creationflags,
             )
             self._tool_proc = proc
-            with open(self._tool_log_path, "w", encoding="utf-8") as logf:
+            # Open in append mode: _run_powershell_tool already truncated
+            # the file and wrote the STARTED banner to it, so the worker
+            # appends streamed output after the banner (keeps the on-disk
+            # log and the GUI log in sync).
+            with open(self._tool_log_path, "a", encoding="utf-8") as logf:
                 assert proc.stdout is not None
                 for line in proc.stdout:
                     line = line.rstrip("\r\n")
-                    if not line:
-                        continue
-                    stripped = line.strip()
-                    if stripped.startswith("SA WinTools -"):
-                        continue
-                    if len(stripped) >= 20 and all(c == "=" for c in stripped):
-                        continue
+                    # Preserve blank lines, headers, and `===` separators
+                    # so the log keeps the script's visual structure (blank
+                    # lines between steps, "SA WinTools - ..." banners, and
+                    # `=====` section dividers). Earlier versions stripped
+                    # these for "compactness" but that made the log a wall
+                    # of text with no readable section breaks.
                     self._tool_signals.output.emit(line)
                     logf.write(line + "\n")
                     logf.flush()
             rc = proc.wait()
         except Exception as e:
             logger.error("Tool worker failed: %s", e, exc_info=True)
-            self._tool_signals.output.emit(f"[ERROR] {e}")
+            err_line = f"[ERROR] {e}"
+            self._tool_signals.output.emit(err_line)
+            # Also persist the error to the on-disk log so "Open Log"
+            # shows the same content as the GUI log.
+            try:
+                with open(self._tool_log_path, "a", encoding="utf-8") as logf:
+                    logf.write(err_line + "\n")
+            except Exception:
+                pass
             rc = -1
         finally:
             self._tool_proc = None
@@ -3565,6 +3699,17 @@ class InfoWindow(QMainWindow):
             if self._tools_built:
                 self._tool_status_lbl.setText("PICKING ITEMS...")
                 self._status_label.setText("Tools: awaiting selection")
+            # Emit a "scan complete" banner so the user sees the scan phase
+            # ended cleanly before the pick dialog appears. The cleanup
+            # phase will clear the log when it starts, so this banner only
+            # appears if the user cancels the dialog (leaving the scan log
+            # visible as the final state).
+            duration = time.monotonic() - self._tool_start_time
+            self._emit_log_line("")
+            self._emit_log_line(
+                f"[{self._tool_ts()}] ===== SCAN COMPLETE "
+                f"({duration:.1f}s, exit {rc}) - pick items to proceed ====="
+            )
             items = self._parse_scan_output(
                 self._tool_log.toPlainText(), pending["spec"]
             )
@@ -3577,6 +3722,7 @@ class InfoWindow(QMainWindow):
                 if self._tools_built:
                     self._tool_status_lbl.setText("NO ITEMS FOUND")
                     self._status_label.setText("Tools: scan found no items")
+                self._emit_log_line("[!] No selectable items were found.")
                 return
             selected = self._path_select_dlg(pending["spec"], items)
             if not selected:
@@ -3588,6 +3734,7 @@ class InfoWindow(QMainWindow):
                 if self._tools_built:
                     self._tool_status_lbl.setText("CANCELLED")
                     self._status_label.setText("Tools: cancelled")
+                self._emit_log_line("[!] Cancelled by user - no items selected.")
                 return
             # Confirm destructive op (the path_select mode already declares
             # confirm=True, but we check here so the user gets one last
@@ -3603,12 +3750,15 @@ class InfoWindow(QMainWindow):
                     if self._tools_built:
                         self._tool_status_lbl.setText("CANCELLED")
                         self._status_label.setText("Tools: cancelled")
+                    self._emit_log_line("[!] Cancelled by user - no cleanup performed.")
                     return
             paths_str = "\n".join(selected)
             script = resolve_tool_placeholders(pending["spec"]["script"])
             script = script.replace("__PATHS__", paths_str)
+            # Add "(cleaning...)" suffix so the STARTED banner of the cleanup
+            # phase clearly distinguishes it from the scan phase.
             cleanup_label = (f"{pending['tool_name']} - "
-                             f"{pending['mode']['label']}")
+                             f"{pending['mode']['label']} (cleaning {len(selected)} item(s)...)")
             # Mode tracking is already set from the scan phase; the cleanup
             # phase is destructive so Stop should prompt if interrupted.
             self._tool_running_mode = pending["mode"]
@@ -3621,6 +3771,9 @@ class InfoWindow(QMainWindow):
             )
             return
 
+        # Compute duration before resetting the start time.
+        duration = (time.monotonic() - self._tool_start_time
+                    if self._tool_start_time else 0.0)
         self._tool_running = False
         self._tool_stopping = False
         self._tool_running_mode = None
@@ -3630,18 +3783,36 @@ class InfoWindow(QMainWindow):
             if self._tool_stopped:
                 self._tool_status_lbl.setText("TERMINATED")
                 self._status_label.setText("Tools: terminated")
+                self._emit_log_line("")
+                self._emit_log_line(
+                    f"[{self._tool_ts()}] ===== TERMINATED BY USER "
+                    f"({duration:.1f}s) ====="
+                )
             else:
                 self._tool_status_lbl.setText("COMPLETED")
                 self._status_label.setText(
                     f"Tools: completed (exit {rc})" if rc else "Tools: completed"
                 )
+                # End banner with exit code + duration for clear feedback.
+                if rc == 0:
+                    self._emit_log_line("")
+                    self._emit_log_line(
+                        f"[{self._tool_ts()}] ===== COMPLETED SUCCESSFULLY "
+                        f"({duration:.1f}s, exit {rc}) ====="
+                    )
+                else:
+                    self._emit_log_line("")
+                    self._emit_log_line(
+                        f"[{self._tool_ts()}] ===== COMPLETED WITH ERRORS "
+                        f"({duration:.1f}s, exit {rc}) ====="
+                    )
                 if self._pending_tool_reboot:
-                    self._tool_log.appendPlainText("")
-                    self._tool_log.appendPlainText(
+                    self._emit_log_line("")
+                    self._emit_log_line(
                         "[!] REBOOT REQUIRED for the changes to take effect."
                     )
-                    self._tool_log.ensureCursorVisible()
             self._pending_tool_reboot = False
+            self._tool_start_time = 0.0
 
     def _set_tool_buttons_enabled(self, enabled: bool) -> None:
         if not self._tools_built:
@@ -3831,11 +4002,20 @@ class InfoWindow(QMainWindow):
         if self._tool_running:
             self._on_tool_stop()
         self._tool_log.clear()
-        self._tool_stopped = False
-        self._tool_stopping = False
+        # Only reset the stop flags if no tool is running.  If a tool IS
+        # running, _on_tool_stop() just launched an async kill thread; the
+        # _on_tool_finished handler (fired when the kill completes) needs
+        # _tool_stopped to still be True to show "TERMINATED BY USER"
+        # instead of "COMPLETED SUCCESSFULLY".  Resetting them here would
+        # race with the async kill and produce misleading status banners.
+        if not self._tool_running:
+            self._tool_stopped = False
+            self._tool_stopping = False
         self._path_select_pending = None
-        self._tool_running_mode = None
-        self._tool_running_name = ""
+        if not self._tool_running:
+            self._tool_running_mode = None
+            self._tool_running_name = ""
+            self._tool_start_time = 0.0
         self._tool_status_lbl.setText("READY")
         self._status_label.setText("Tools: ready")
 
@@ -3940,7 +4120,13 @@ class InfoWindow(QMainWindow):
                 "Please enter a value before proceeding."
             )
             return None
-        return {"__INPUT__": text}
+        # Escape single quotes for PowerShell single-quoted string context.
+        # Every tool script embeds user input inside '...' literals, so a
+        # raw ' would terminate the string and allow arbitrary command
+        # injection. PowerShell's only escape sequence for ' inside a
+        # single-quoted string is doubling it to ''.
+        safe = text.replace("'", "''")
+        return {"__INPUT__": safe}
 
     def _collect_drive_input(self, spec: dict) -> dict[str, str] | None:
         drives = self._drive_list()
@@ -4482,17 +4668,18 @@ class InfoWindow(QMainWindow):
                         f"Max: {fmt_sensor_value(stype, mm[1])}"
                     )
 
-                if prev_type == "Temperature":
+                if prev_type in _SENSOR_SPARK_COLORS:
                     _sp_max_s = get_config().sparkline_max_samples
                     spark_row: QHBoxLayout | None = None
                     count_in_row = 0
                     for entry in current_entries:
                         name = entry.get("Name", "N/A")
                         val = entry.get("Value", 0.0)
-                        key = (source, "Temperature", name)
+                        key = (source, prev_type, name)
                         sp = _Sparkline(
                             max_samples=_sp_max_s,
-                            color="#e07b7b", label=name)
+                            color=_SENSOR_SPARK_COLORS[prev_type],
+                            label=name)
                         sp.setMinimumHeight(50)
                         if key in self._sensor_spark_data:
                             sp.set_samples(self._sensor_spark_data[key])
@@ -4848,6 +5035,12 @@ class InfoWindow(QMainWindow):
         tabs = QTabWidget()
         tabs.setObjectName("software-tabs")
 
+        # Lazy tab construction: only build the currently-visible tab to
+        # avoid wasting ~40-80ms per 5s refresh building the invisible one.
+        # When the user switches tabs, currentChanged triggers a full
+        # rebuild which constructs the newly-visible tab.
+        visible_tab = max(prev_tab, 0)
+
         # Thresholds for smart colorization (per-column) — read from config
         # Returns (red, orange) thresholds; above red = critical, above orange = warning
         _cfg = get_config()
@@ -4887,32 +5080,36 @@ class InfoWindow(QMainWindow):
         table.verticalHeader().setVisible(False)
         table.setSortingEnabled(False)
 
-        for i, p in enumerate(procs):
-            table.setItem(i, 0, _NumericItem(str(p.get("PID", 0)), p.get("PID", 0)))
-            table.setItem(i, 1, _SelBlackItem(p.get("Name", "N/A")))
+        # Lazy row population: only fill rows when the table is visible.
+        # The per-row setItem loop creates ~1200 QTableWidgetItems for 200
+        # processes — this is the expensive part, not the table setup.
+        if visible_tab == 0:
+            for i, p in enumerate(procs):
+                table.setItem(i, 0, _NumericItem(str(p.get("PID", 0)), p.get("PID", 0)))
+                table.setItem(i, 1, _SelBlackItem(p.get("Name", "N/A")))
 
-            cpu_val = p.get("CPU %", 0.0)
-            cpu_item = _NumericItem(f"{cpu_val:.1f}%", cpu_val)
-            _colorize_item(cpu_item, cpu_val, "cpu")
-            table.setItem(i, 2, cpu_item)
+                cpu_val = p.get("CPU %", 0.0)
+                cpu_item = _NumericItem(f"{cpu_val:.1f}%", cpu_val)
+                _colorize_item(cpu_item, cpu_val, "cpu")
+                table.setItem(i, 2, cpu_item)
 
-            mem_mb = p.get("Memory (MB)", 0)
-            mem_item = _NumericItem(
-                f"{mem_mb:.1f} MB" if mem_mb else "N/A", mem_mb)
-            _colorize_item(mem_item, mem_mb, "mem")
-            table.setItem(i, 3, mem_item)
+                mem_mb = p.get("Memory (MB)", 0)
+                mem_item = _NumericItem(
+                    f"{mem_mb:.1f} MB" if mem_mb else "N/A", mem_mb)
+                _colorize_item(mem_item, mem_mb, "mem")
+                table.setItem(i, 3, mem_item)
 
-            disk_kb = p.get("Disk (KB/s)", 0)
-            disk_item = _NumericItem(
-                f"{disk_kb:.1f} KB/s" if disk_kb else "0 KB/s", disk_kb)
-            _colorize_item(disk_item, disk_kb, "disk")
-            table.setItem(i, 4, disk_item)
+                disk_kb = p.get("Disk (KB/s)", 0)
+                disk_item = _NumericItem(
+                    f"{disk_kb:.1f} KB/s" if disk_kb else "0 KB/s", disk_kb)
+                _colorize_item(disk_item, disk_kb, "disk")
+                table.setItem(i, 4, disk_item)
 
-            net_n = p.get("Network", 0)
-            net_item = _NumericItem(
-                f"{net_n} conn" if net_n else "—", net_n)
-            _colorize_item(net_item, net_n, "net")
-            table.setItem(i, 5, net_item)
+                net_n = p.get("Network", 0)
+                net_item = _NumericItem(
+                    f"{net_n} conn" if net_n else "—", net_n)
+                _colorize_item(net_item, net_n, "net")
+                table.setItem(i, 5, net_item)
 
         header = table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
@@ -4945,57 +5142,61 @@ class InfoWindow(QMainWindow):
         tree.setHeaderLabels(["PID", "Name", "CPU %", "Memory", "Disk", "Network"])
         tree.setSortingEnabled(False)
 
-        proc_by_pid: dict[int, dict] = {}
-        children_map: dict[int | None, list[dict]] = {}
-        for p in procs:
-            pid = p.get("PID")
-            if pid is None:
-                continue
-            proc_by_pid[pid] = p
-        for p in procs:
-            ppid = p.get("PPID")
-            children_map.setdefault(ppid, []).append(p)
+        # Lazy item population: only build tree items when the tree tab is
+        # visible. The recursive _add_children traversal + QTreeWidgetItem
+        # creation for ~200 processes is the expensive part.
+        if visible_tab == 1:
+            proc_by_pid: dict[int, dict] = {}
+            children_map: dict[int | None, list[dict]] = {}
+            for p in procs:
+                pid = p.get("PID")
+                if pid is None:
+                    continue
+                proc_by_pid[pid] = p
+            for p in procs:
+                ppid = p.get("PPID")
+                children_map.setdefault(ppid, []).append(p)
 
-        def _make_tree_item(p: dict) -> QTreeWidgetItem:
-            cpu_val = p.get("CPU %", 0.0)
-            mem_mb = p.get("Memory (MB)", 0)
-            disk_kb = p.get("Disk (KB/s)", 0)
-            net_n = p.get("Network", 0)
-            item = QTreeWidgetItem([
-                str(p.get("PID", 0)),
-                p.get("Name", "N/A"),
-                f"{cpu_val:.1f}%",
-                f"{mem_mb:.1f} MB" if mem_mb else "N/A",
-                f"{disk_kb:.1f} KB/s" if disk_kb else "0 KB/s",
-                f"{net_n} conn" if net_n else "—",
-            ])
-            for col, (val, key) in enumerate([
-                (cpu_val, "cpu"), (mem_mb, "mem"),
-                (disk_kb, "disk"), (net_n, "net"),
-            ], start=2):
-                c = _color_for(val, key)
-                if c is not None:
-                    item.setForeground(col, c)
-            return item
+            def _make_tree_item(p: dict) -> QTreeWidgetItem:
+                cpu_val = p.get("CPU %", 0.0)
+                mem_mb = p.get("Memory (MB)", 0)
+                disk_kb = p.get("Disk (KB/s)", 0)
+                net_n = p.get("Network", 0)
+                item = QTreeWidgetItem([
+                    str(p.get("PID", 0)),
+                    p.get("Name", "N/A"),
+                    f"{cpu_val:.1f}%",
+                    f"{mem_mb:.1f} MB" if mem_mb else "N/A",
+                    f"{disk_kb:.1f} KB/s" if disk_kb else "0 KB/s",
+                    f"{net_n} conn" if net_n else "—",
+                ])
+                for col, (val, key) in enumerate([
+                    (cpu_val, "cpu"), (mem_mb, "mem"),
+                    (disk_kb, "disk"), (net_n, "net"),
+                ], start=2):
+                    c = _color_for(val, key)
+                    if c is not None:
+                        item.setForeground(col, c)
+                return item
 
-        def _add_children(parent_item, parent_pid: int | None):
-            kids = children_map.get(parent_pid, [])
-            kids.sort(key=lambda x: x.get("Name", "").lower())
-            for kid in kids:
-                child_item = _make_tree_item(kid)
-                parent_item.addChild(child_item)
-                _add_children(child_item, kid.get("PID"))
+            def _add_children(parent_item, parent_pid: int | None):
+                kids = children_map.get(parent_pid, [])
+                kids.sort(key=lambda x: x.get("Name", "").lower())
+                for kid in kids:
+                    child_item = _make_tree_item(kid)
+                    parent_item.addChild(child_item)
+                    _add_children(child_item, kid.get("PID"))
 
-        root_items = children_map.get(None, [])
-        if not root_items:
-            root_items = [p for p in procs if p.get("PPID") not in proc_by_pid]
-            root_items.sort(key=lambda x: x.get("Name", "").lower())
-        for r in root_items:
-            top_item = _make_tree_item(r)
-            tree.addTopLevelItem(top_item)
-            _add_children(top_item, r.get("PID"))
+            root_items = children_map.get(None, [])
+            if not root_items:
+                root_items = [p for p in procs if p.get("PPID") not in proc_by_pid]
+                root_items.sort(key=lambda x: x.get("Name", "").lower())
+            for r in root_items:
+                top_item = _make_tree_item(r)
+                tree.addTopLevelItem(top_item)
+                _add_children(top_item, r.get("PID"))
 
-        tree.expandToDepth(0)
+            tree.expandToDepth(0)
         tree.header().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         tree.header().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         tree.header().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
@@ -5010,8 +5211,28 @@ class InfoWindow(QMainWindow):
         tree_layout.addWidget(tree_count)
         tabs.addTab(tree_page, "Tree View")
 
+        # Block signals during tab restoration so currentChanged doesn't
+        # trigger a redundant rebuild.
+        tabs.blockSignals(True)
         if prev_tab >= 0:
             tabs.setCurrentIndex(min(prev_tab, tabs.count() - 1))
+        tabs.blockSignals(False)
+
+        # When the user switches tabs, rebuild the page so the newly-
+        # visible tab gets its rows populated.  The _process_tab_rebuilding
+        # guard prevents infinite recursion: during the rebuild, this
+        # handler fires again (from setCurrentIndex above, which is now
+        # blocked, or from Qt internals) and returns immediately.
+        def _on_proc_tab_changed(_idx: int) -> None:
+            if self._process_tab_rebuilding:
+                return
+            self._process_tab_rebuilding = True
+            try:
+                self._populate_processes()
+            finally:
+                self._process_tab_rebuilding = False
+        tabs.currentChanged.connect(_on_proc_tab_changed)
+
         layout.addWidget(tabs)
         if prev_scroll > 0:
             from PySide6.QtCore import QTimer
@@ -5298,6 +5519,12 @@ class InfoWindow(QMainWindow):
         self._clear_layout(layout)
         health = self.collector.data.health_info
         page_idx = 8
+        # Insert the bottom stretch BEFORE any _make_card call so the
+        # insertWidget(count-1, card) logic in _make_card places each new
+        # card just above the stretch (preserving caller-declared order).
+        # Without this, cards are inserted before the LAST card (which is
+        # the previous card, not a stretch), reversing the order.
+        layout.addStretch()
 
         # -- Disk SMART -- #
         disk_smart = health.get("disk_smart", [])
@@ -5356,8 +5583,6 @@ class InfoWindow(QMainWindow):
             act_rows = [("Status", activation.get("Status",
                         "Activation info not available"))]
         self._make_card(layout, "Windows Activation", act_rows, page_idx)
-
-        layout.addStretch()
 
     def _populate_speed_test(self) -> None:
         layout: QVBoxLayout = self._pages[9].widget().layout()
@@ -5620,20 +5845,26 @@ class InfoWindow(QMainWindow):
         if page_idx >= 0:
             for dev in devices:
                 name = dev.get("Name", "Device")
+                idx = len(self._search_items)
                 self._search_items.append({
                     "page": str(page_idx),
                     "section": title,
                     "key": f"{name} Name",
                     "value": str(name),
                 })
+                self._search_items_by_page.setdefault(
+                    page_idx, []).append(idx)
                 status = dev.get("Status")
                 if status is not None:
+                    idx = len(self._search_items)
                     self._search_items.append({
                         "page": str(page_idx),
                         "section": title,
                         "key": f"{name} Status",
                         "value": str(status),
                     })
+                    self._search_items_by_page.setdefault(
+                        page_idx, []).append(idx)
 
         # Table fills the tab (stretch=1)
         self._setup_table_copy(table)
@@ -5733,12 +5964,15 @@ class InfoWindow(QMainWindow):
                 # Index for search
                 for evt in shown[:50]:
                     if page_idx >= 0:
+                        idx = len(self._search_items)
                         self._search_items.append({
                             "page": str(page_idx),
                             "section": title,
                             "key": f"{evt.get('Source', 'Event')} {evt.get('Event ID', '')}",
                             "value": evt.get("Message", ""),
                         })
+                        self._search_items_by_page.setdefault(
+                            page_idx, []).append(idx)
             else:
                 self._make_card(tl, title,
                                 [("Status", "No recent errors/warnings")],
@@ -5977,9 +6211,7 @@ class InfoWindow(QMainWindow):
     # -- Export ------------------------------------------------------------- #
     def _on_log_clicked(self) -> None:
         """Open app.log in the default text editor."""
-        log_path = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), "app.log"
-        )
+        log_path = os.path.join(data_dir(), "app.log")
         if not os.path.exists(log_path):
             self._status_label.setText("No log file exists yet.")
             return
@@ -6044,26 +6276,33 @@ class InfoWindow(QMainWindow):
     def _on_about_clicked(self) -> None:
         """Show the About dialog."""
         dlg = QDialog(self)
-        dlg.setWindowTitle("About SysPeek")
+        dlg.setWindowTitle("About SysDigger")
         dlg.setMinimumWidth(520)
         layout = QVBoxLayout(dlg)
         layout.setSpacing(14)
         layout.setContentsMargins(28, 24, 28, 20)
 
-        title = QLabel("SysPeek")
+        title = QLabel("SysDigger")
         title.setStyleSheet(f"font-size: 26px; font-weight: 700; color: {_ACCENT};")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title)
 
-        ver = QLabel("Version 4.11")
+        ver = QLabel("Version 4.16")
         ver.setStyleSheet("font-size: 13px; font-weight: 600;")
         ver.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(ver)
 
-        copy = QLabel("Copyright (C) Stavros Antoniou")
+        copy = QLabel("© 2026 Stavros Antoniou · All Rights Reserved")
         copy.setStyleSheet("font-size: 12px;")
         copy.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(copy)
+
+        license_note = QLabel("Proprietary software — unauthorized copying, modification, "
+                               "or distribution is prohibited. See LICENSE file for details.")
+        license_note.setStyleSheet("font-size: 11px;")
+        license_note.setWordWrap(True)
+        license_note.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(license_note)
 
         sep = QFrame()
         sep.setFrameShape(QFrame.Shape.HLine)
@@ -6071,7 +6310,7 @@ class InfoWindow(QMainWindow):
         layout.addWidget(sep)
 
         desc = QLabel(
-            "SysPeek is a Windows system information and diagnostics viewer. "
+            "SysDigger is a Windows system information and diagnostics viewer. "
             "It gathers hardware, operating system, network, software, and "
             "diagnostic data into a single Fluent-style interface.\n\n"
             "Key features:\n"
@@ -6091,9 +6330,9 @@ class InfoWindow(QMainWindow):
             "  •  Diagnostics — event logs, BSOD history, crash dumps, restore "
             "points, environment variables, PATH entries, DirectX/D3D feature "
             "levels\n"
-            "  •  Tools — 26 integrated system utilities (flush DNS, disk "
+            "  •  Tools — 27 integrated system utilities (flush DNS, disk "
             "cleanup, SFC/DISM, HID services, memory diagnostic, hosts file "
-            "editor, Windows Update trigger, etc.)\n"
+            "editor, Windows Update trigger, UEFI BIOS reboot, etc.)\n"
             "  •  Disk Analyzer — large file scan, top folders, recursive "
             "folder size map, duplicate file finder, and scan-then-pick "
             "cleanup of biggest AppData folders or user profile files (you "
@@ -6102,6 +6341,8 @@ class InfoWindow(QMainWindow):
             "  •  Dev Cache Cleaner — clear npm / pip caches and leftover "
             "updater folders (LM Studio, Vortex, RSI Launcher, uv)\n"
             "  •  Hibernate Manager — toggle hibernation to free hiberfil.sys\n"
+            "  •  UEFI BIOS Reboot — restart the PC directly into UEFI "
+            "firmware settings (BIOS) without spamming the BIOS hotkey\n"
             "  •  Disk benchmark — sequential read/write speed test\n"
             "  •  Exports — JSON, Text, and HTML reports\n"
             "  •  Copy selected rows to clipboard from any table (Ctrl+C or "
@@ -6690,11 +6931,17 @@ class InfoWindow(QMainWindow):
             proc = self._tool_proc
             if proc and proc.poll() is None:
                 try:
+                    # Force-kill the whole process tree.  A timeout guards
+                    # against taskkill itself hanging (zombie process,
+                    # stuck kernel driver) and locking the window open.
                     subprocess.run(
                         ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
                         capture_output=True,
                         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                        timeout=5,
                     )
+                except subprocess.TimeoutExpired:
+                    logger.warning("taskkill timed out closing tool subprocess")
                 except Exception:
                     pass
         if self._sensor_refresh_timer is not None:
@@ -6706,11 +6953,21 @@ class InfoWindow(QMainWindow):
         if self._refresh_dot_timer is not None:
             self._refresh_dot_timer.stop()
             self._refresh_dot_timer = None
-        # Stop the LHM.exe background process and clean up driver services.
+        # Uninstall the PawnIO driver (portable mode — nothing left behind).
         lhm_proc = getattr(self.collector, "_lhm_process", None)
         if lhm_proc is not None:
+            progress = QProgressDialog(
+                "Uninstalling PawnIO driver…", None, 0, 0, self
+            )
+            progress.setWindowTitle("SysDigger")
+            progress.setCancelButton(None)
+            progress.setWindowModality(Qt.WindowModal)
+            progress.setMinimumDuration(0)
+            progress.show()
+            QApplication.processEvents()
             try:
                 lhm_proc.stop()
             except Exception:
                 pass
+            progress.close()
         super().closeEvent(event)

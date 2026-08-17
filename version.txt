@@ -16,12 +16,12 @@ VSVersionInfo(
     StringFileInfo([
       StringTable('040904B0', [
         StringStruct('CompanyName', 'Stavros Antoniou'),
-        StringStruct('FileDescription', 'SysPeek - System Information Viewer'),
+        StringStruct('FileDescription', 'SysDigger - System Information Viewer'),
         StringStruct('FileVersion', '4.11.0.0'),
-        StringStruct('InternalName', 'SysPeek'),
+        StringStruct('InternalName', 'SysDigger'),
         StringStruct('LegalCopyright', 'Copyright (C) Stavros Antoniou'),
-        StringStruct('OriginalFilename', 'SysPeek.exe'),
-        StringStruct('ProductName', 'SysPeek'),
+        StringStruct('OriginalFilename', 'SysDigger.exe'),
+        StringStruct('ProductName', 'SysDigger'),
         StringStruct('ProductVersion', '4.11.0.0'),
       ])
     ]),

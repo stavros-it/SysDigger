@@ -1,10 +1,10 @@
 @echo off
 setlocal EnableDelayedExpansion
 chcp 65001 >nul
-title SysPeek - Dependency Installer
+title SysDigger - Dependency Installer
 
 echo ============================================================
-echo   SysPeek - Dependency Installer
+echo   SysDigger - Dependency Installer
 echo ============================================================
 echo.
 
@@ -92,7 +92,7 @@ if exist "%~dp0lib\LibreHardwareMonitorLib.dll" (
 echo.
 echo ============================================================
 echo   All dependencies installed successfully!
-echo   Launch the app by double-clicking:  syspeek.pyw
+echo   Launch the app by double-clicking:  sysdigger.pyw
 echo ============================================================
 echo.
 pause

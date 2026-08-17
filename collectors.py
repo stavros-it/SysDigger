@@ -21,7 +21,7 @@ import psutil
 import requests
 
 from app_logger import get_logger
-
+from paths import cache_dir
 logger = get_logger(__name__)
 
 try:
@@ -155,16 +155,25 @@ class Collector:
     def __init__(self) -> None:
         self.data = SystemData()
         self._lhm_computer = None
-        self._cache_dir = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), "cache"
-        )
+        self._cache_dir = cache_dir()
         self._wmi_local = threading.local()
         self._process_cpu_primed = False
         self._process_io_prev: dict[int, tuple[int, int]] = {}
         self._process_io_time: float = 0.0
+        # Shared caches between collect_processes() and
+        # collect_active_connections() to avoid duplicating expensive
+        # psutil.process_iter and psutil.net_connections syscalls (each
+        # ~50-200ms on a busy system) on every 5s refresh.
+        self._pid_name_cache: dict[int, str] = {}
+        self._net_conns_cache: list = []
         self._lhm_lock = threading.Lock()
         self._sensor_read_lock = threading.Lock()
         self._kb_title_cache: dict[str, tuple[float, str]] = {}
+        # PDH query cache for AMD per-core frequency (opened lazily by
+        # _read_amd_per_core_freqs, reused on every 2s refresh).
+        self._pdh_query = None
+        self._pdh_perf_counters: list = []
+        self._pdh_base_freq: float = 0.0
         self._kb_title_ttl = 7 * 24 * 3600  # 7 days
         self._lhm_process = None
 
@@ -414,6 +423,10 @@ class Collector:
 
         hw["battery"] = bat
 
+        # Set hw_info BEFORE collecting sensors so that
+        # _apply_amd_cpu_fallbacks() can read the CPU name to detect AMD.
+        self.data.hw_info = hw
+
         try:
             hw["sensors"] = self._collect_sensors()
         except Exception as e:
@@ -425,7 +438,6 @@ class Collector:
                              "levels": [], "data": [], "factors": [],
                              "throughputs": [], "smalldata": [],
                              "controls": []}
-        self.data.hw_info = hw
 
     def _collect_hardware_static(self, static: dict[str, Any]) -> None:
         """Collect static hardware info, with per-section error boundaries.
@@ -782,11 +794,12 @@ class Collector:
 
     # -- Sensors (temperatures & fans) -------------------------------------- #
     def set_lhm_process(self, proc) -> None:
-        """Attach an LhmProcess for kernel-driver-assisted sensor reads.
+        """Attach a PawnIO driver manager for kernel-driver-assisted reads.
 
-        When the PawnIO driver is loaded (by LHM.exe), the existing DLL-based
-        sensor collection automatically picks up motherboard SuperIO sensors.
-        We invalidate the cached Computer so the next _collect_sensors call
+        When the PawnIO driver is installed (via the standalone installer),
+        the existing DLL-based sensor collection automatically picks up
+        motherboard SuperIO sensors and AMD CPU MSR registers.  We
+        invalidate the cached Computer so the next _collect_sensors call
         recreates it with the driver now available.
         """
         self._lhm_process = proc
@@ -795,10 +808,15 @@ class Collector:
                 old = self._lhm_computer
                 self._lhm_computer = None
             if old is not None:
-                try:
-                    old.Close()
-                except Exception:
-                    pass
+                # Close under _sensor_read_lock too: the 2s refresh timer
+                # may be iterating old.Hardware at this moment. Without
+                # this lock, old.Close() can race with the iteration and
+                # crash or return empty results for one refresh cycle.
+                with self._sensor_read_lock:
+                    try:
+                        old.Close()
+                    except Exception:
+                        pass
 
     def _get_lhm_computer(self):
         """Get or create the persistent LHM Computer object."""
@@ -870,6 +888,7 @@ class Collector:
         except Exception as e:
             result["hint"] = f"Sensor error: {e}"
 
+        self._apply_amd_cpu_fallbacks(result)
         return result
 
     def _read_sensors(self, hw_obj, hw_name: str, hw_type: str,
@@ -920,6 +939,139 @@ class Collector:
             elif stype == "Control":
                 result["controls"].append(entry)
 
+    def _read_amd_per_core_freqs(self) -> list[float]:
+        """Read live per-core effective frequencies on AMD via Windows PDH.
+
+        Uses the ``% Processor Performance`` performance counter per logical
+        core, multiplied by the base frequency from ``psutil.cpu_freq()``.
+        On AMD Zen, this counter tracks boost/throttle events correctly
+        (>100% = boost above base, <100% = throttle below base).
+
+        The PDH query + counters are cached on the instance so the 2s
+        refresh timer doesn't re-open them every cycle.
+        """
+        try:
+            import win32pdh
+        except ImportError:
+            return []
+        try:
+            # Reuse the cached PDH query if available (opened on first call).
+            query = self._pdh_query
+            counters = self._pdh_perf_counters
+            base_freq = self._pdh_base_freq
+            if query is None:
+                base_freq_info = psutil.cpu_freq()
+                if not base_freq_info or base_freq_info.current <= 0:
+                    return []
+                base_freq = float(base_freq_info.current)
+                self._pdh_base_freq = base_freq
+
+                query = win32pdh.OpenQuery()
+                self._pdh_query = query
+                counters = []
+                n_logical = psutil.cpu_count(logical=True) or 1
+                n_physical = psutil.cpu_count(logical=False) or 1
+                # PDH instance format is "NUMA,Logical" — e.g. "0,0" through
+                # "0,15" for a 16-thread CPU.  We read one counter per
+                # PHYSICAL core (the first N logical threads map 1:1 to
+                # physical cores on AMD Zen SMT).
+                for i in range(n_physical):
+                    inst = f"0,{i}"
+                    path = (rf"\Processor Information({inst})"
+                            r"\% Processor Performance")
+                    try:
+                        c = win32pdh.AddEnglishCounter(query, path, 0)
+                        counters.append(c)
+                    except Exception:
+                        pass
+                self._pdh_perf_counters = counters
+                # Prime the counter with a first sample (rate-based counters
+                # need two samples before they return data).
+                win32pdh.CollectQueryData(query)
+            # Second sample — this returns the actual value.
+            win32pdh.CollectQueryData(query)
+            freqs: list[float] = []
+            for c in counters:
+                try:
+                    val = win32pdh.GetFormattedCounterValue(
+                        c, win32pdh.PDH_FMT_DOUBLE)
+                    perf_pct = val[1]
+                    if perf_pct > 0:
+                        freqs.append(base_freq * perf_pct / 100.0)
+                    else:
+                        freqs.append(base_freq)
+                except Exception:
+                    freqs.append(base_freq)
+            return freqs
+        except Exception as e:
+            logger.debug("PDH per-core freq read failed: %s", e)
+            return []
+
+    def _apply_amd_cpu_fallbacks(self, result: dict[str, Any]) -> None:
+        """Replace zero-value CPU Clock/Power sensors with live fallbacks.
+
+        LHM 0.9.6 cannot read Clock and Power telemetry from the AMD SMU
+        on Zen 2/3/4 CPUs (returns 0 MHz / 0 W).  This method detects that
+        condition and replaces the zero-value Clock entries with real
+        **effective** per-core frequencies read from the Windows PDH
+        (Performance Data Helper) API:
+
+        ``% Processor Performance`` counter reports the ratio of actual
+        frequency to the advertised base frequency.  On AMD Zen this
+        correctly tracks boost/throttle events (>100% = boost, <100% =
+        throttle).  Multiplying by the base frequency yields the live
+        effective frequency per core — no kernel driver needed.
+
+        Zero-value CPU Power entries are removed entirely since there is
+        no portable Python-side equivalent.  On Intel CPUs LHM reads
+        Clock/Power/Voltage correctly, so this method is a no-op (guarded
+        by the AMD vendor check).
+        """
+        cpu_name = self.data.hw_info.get("cpu", {}).get("Name", "CPU")
+        if "AMD" not in cpu_name.upper():
+            return
+
+        # --- Clocks: replace 0-value CPU clocks with live PDH freqs -- #
+        cpu_clocks = [e for e in result["clocks"]
+                      if e.get("Category") == "CPU"]
+        has_zero_cpu_clocks = any(
+            e.get("Value", 0.0) == 0.0 for e in cpu_clocks)
+        if cpu_clocks and has_zero_cpu_clocks:
+            # Capture the LHM hardware Source name from existing CPU
+            # entries so the psutil fallback clocks land on the SAME
+            # Sensors tab as the CPU temperatures/loads/voltages.
+            cpu_source = cpu_clocks[0].get("Source", cpu_name)
+            live_freqs = self._read_amd_per_core_freqs()
+            if live_freqs:
+                # Remove the zero-value CPU clock entries from LHM.
+                result["clocks"] = [e for e in result["clocks"]
+                                     if e.get("Category") != "CPU"
+                                     or e.get("Value", 0.0) != 0.0]
+                # Add live per-core clocks.
+                for i, freq in enumerate(live_freqs):
+                    if freq > 0:
+                        result["clocks"].append({
+                            "Name": f"Core #{i + 1}",
+                            "Value": float(freq),
+                            "Source": cpu_source,
+                            "Type": "Clock",
+                            "Category": "CPU",
+                        })
+                avg = sum(live_freqs) / len(live_freqs)
+                if avg > 0:
+                    result["clocks"].append({
+                        "Name": "Cores (Average)",
+                        "Value": float(avg),
+                        "Source": cpu_source,
+                        "Type": "Clock",
+                        "Category": "CPU",
+                    })
+
+        # --- Power: remove 0-value CPU power entries (no portable source) -- #
+        result["powers"] = [e for e in result["powers"]
+                            if e.get("Category") != "CPU"
+                            or e.get("Value", 0.0) != 0.0]
+
     def _collect_sensors_wmi_fallback(self, result: dict[str, Any]) -> dict[str, Any]:
         with self._wmi_namespace("root/WMI") as acpi:
             if acpi is not None:
@@ -932,6 +1084,8 @@ class Collector:
                                 "Name": "ACPI Thermal Zone",
                                 "Value": celsius,
                                 "Source": str(getattr(tz, "InstanceName", "")).strip(),
+                                "Type": "Temperature",
+                                "Category": "Motherboard",
                             })
                 except Exception:
                     pass
@@ -945,6 +1099,8 @@ class Collector:
                             "Name": "Temperature Probe",
                             "Value": celsius,
                             "Source": str(getattr(p, "Description", "")).strip(),
+                            "Type": "Temperature",
+                            "Category": "Motherboard",
                         })
             except Exception:
                 pass
@@ -956,6 +1112,8 @@ class Collector:
                             "Name": "System Fan",
                             "Value": float(speed),
                             "Source": str(getattr(f, "Description", "")).strip(),
+                            "Type": "Fan",
+                            "Category": "Motherboard",
                         })
             except Exception:
                 pass
@@ -1504,21 +1662,30 @@ class Collector:
         logger.info("Collecting active connections")
         results: list[dict[str, str]] = []
         try:
-            pid_to_name: dict[int, str] = {}
-            try:
-                for p in psutil.process_iter(["pid", "name"]):
-                    pid = p.info.get("pid", 0)
-                    name = p.info.get("name", "")
-                    if pid and name:
-                        pid_to_name[pid] = name
-            except Exception:
-                pass
+            # Reuse the pid→name cache populated by collect_processes() if
+            # available; fall back to a fresh process_iter only if the cache
+            # is empty (e.g., collect_active_connections called standalone).
+            pid_to_name = self._pid_name_cache
+            if not pid_to_name:
+                try:
+                    for p in psutil.process_iter(["pid", "name"]):
+                        pid = p.info.get("pid", 0)
+                        name = p.info.get("name", "")
+                        if pid and name:
+                            pid_to_name[pid] = name
+                except Exception:
+                    pass
 
             _proto_map = {
                 1: "TCP", 2: "TCP", 5: "TCP", 6: "TCP",
                 17: "UDP", 18: "UDP",
             }
-            conns = psutil.net_connections(kind="inet")
+            # Reuse the net_connections cache from collect_processes() if
+            # available; otherwise make a fresh call.
+            conns = self._net_conns_cache or psutil.net_connections(kind="inet")
+            # Clear the cache so we don't accidentally reuse stale data on
+            # the next standalone call (without a preceding collect_processes).
+            self._net_conns_cache = []
             for c in conns:
                 proto = "TCP" if c.type == socket.SOCK_STREAM else "UDP"
                 laddr = ""
@@ -1799,7 +1966,11 @@ class Collector:
             # Build network connection count per PID
             net_by_pid: dict[int, int] = {}
             try:
-                for conn in psutil.net_connections(kind="inet"):
+                net_conns = psutil.net_connections(kind="inet")
+                # Cache for reuse by collect_active_connections() (saves
+                # a duplicate ~50-200ms syscall on every 5s refresh).
+                self._net_conns_cache = net_conns
+                for conn in net_conns:
                     pid = getattr(conn, "pid", None)
                     if pid:
                         net_by_pid[pid] = net_by_pid.get(pid, 0) + 1
@@ -1847,12 +2018,21 @@ class Collector:
                         "Network": net_by_pid.get(pid, 0),
                         "User": p.info.get("username") or "N/A",
                     })
+                    # Cache pid→name for reuse by collect_active_connections
+                    # (saves a duplicate psutil.process_iter syscall).
+                    name = p.info.get("name") or ""
+                    if name:
+                        self._pid_name_cache[pid] = name
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     continue
 
             procs.sort(key=lambda x: x["CPU %"], reverse=True)
-            procs = procs[:get_config().process_top_n]
+            # Capture current PIDs from the FULL process list BEFORE slicing
+            # to top-N.  Otherwise we'd prune every PID not in the top-N,
+            # which then re-appears with prev=None on the next refresh and
+            # always reports 0 KB/s disk I/O (B-15/I-19 regression).
             current_pids = {p["PID"] for p in procs}
+            procs = procs[:get_config().process_top_n]
             stale = [pid for pid in self._process_io_prev if pid not in current_pids]
             for pid in stale:
                 del self._process_io_prev[pid]
@@ -1878,7 +2058,10 @@ class Collector:
             "Read Speed (MB/s)": 0.0,
             "Status": "Running",
         }
-        test_file = os.path.join(drive, "_syspeek_bench.tmp")
+        # os.path.join("C:", "file") yields "C:file" — a path RELATIVE to
+        # the current directory on drive C, NOT the drive root.  Append a
+        # backslash so the temp file lands at the root of the chosen drive.
+        test_file = os.path.join(drive + os.sep, "_SysDigger_bench.tmp")
         data_block = b"\x00" * (1024 * 1024)  # 1 MB block
         try:
             # Write phase
@@ -3491,9 +3674,9 @@ class Collector:
             pass
 
         # Additional power info via WMI
-        if _WMI_AVAILABLE:
+        wmi_conn = self._wmi_conn
+        if wmi_conn:
             try:
-                wmi_conn = self._wmi_conn
                 # Battery info if present
                 batteries = list(wmi_conn.Win32_Battery())
                 if batteries:
@@ -3744,7 +3927,7 @@ class Collector:
 
         result: dict[str, Any] = {"Active": False, "Connections": []}
 
-        if not _WMI_AVAILABLE:
+        if not self._wmi_conn:
             self.data.vpn_status = result
             return
 
