@@ -1,6 +1,18 @@
 # SysDigger
 
-Windows system information and diagnostics viewer with a Fluent-style GUI.
+[![CI](https://github.com/stavros-it/SysDigger/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/stavros-it/SysDigger/actions/workflows/ci.yml)
+[![Build and Sign](https://github.com/stavros-it/SysDigger/actions/workflows/build-and-sign.yml/badge.svg)](https://github.com/stavros-it/SysDigger/actions/workflows/build-and-sign.yml)
+[![Release](https://img.shields.io/github/v/release/stavros-it/SysDigger?include_prereleases)](https://github.com/stavros-it/SysDigger/releases)
+[![Downloads](https://img.shields.io/github/downloads/stavros-it/SysDigger/total)](https://github.com/stavros-it/SysDigger/releases)
+[![Python](https://img.shields.io/badge/python-3.12%2B-blue)](https://www.python.org/)
+[![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-0078D6)](https://github.com/stavros-it/SysDigger)
+[![License](https://img.shields.io/badge/license-Proprietary-red)](LICENSE)
+[![Last commit](https://img.shields.io/github/last-commit/stavros-it/SysDigger)](https://github.com/stavros-it/SysDigger/commits/main)
+
+Windows system information and diagnostics viewer with a Fluent-style GUI. SysDigger
+surfaces everything from CPU/GPU sensors and live network connections to BSOD history
+and 27 integrated maintenance tools — all in a single dark-themed PySide6 window with
+live search, copy-to-clipboard, and JSON/Text/HTML export.
 
 ![SysDigger](app_preview.png)
 

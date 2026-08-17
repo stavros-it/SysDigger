@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-and-compile:
+    name: Compile check & imports
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Compile check (py_compile)
+        run: |
+          python -m py_compile `
+            app.py gui.py collectors.py sysdigger.pyw tools.py `
+            sensors.py helpers.py config.py lhm_process.py `
+            updater.py app_logger.py paths.py
+
+      - name: Import smoke test (headless Qt)
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          python -c "import app, gui, collectors, tools, sensors, helpers, config, lhm_process, updater, app_logger, paths; print('all modules imported OK')"
