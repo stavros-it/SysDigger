@@ -108,6 +108,17 @@ Free code signing provided by [SignPath.io](https://about.signpath.io), certific
 
 This program will not transfer any information to other networked systems unless specifically requested by the user or the person installing or operating it.
 
+## Third-party components
+
+SysDigger bundles or uses the following third-party components:
+
+- **[LibreHardwareMonitorLib](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor)** (MPL-2.0) — hardware sensor readings (CPU/GPU/motherboard temps, fan speeds, voltages)
+- **[PawnIO](https://github.com/namazso/PawnIO)** kernel driver (GPL-2.0+ with DeviceIoControl exception) — required for motherboard SuperIO and AMD CPU MSR sensor access. The driver is NOT bundled with SysDigger; the official `PawnIO_setup.exe` installer is downloaded from the [PawnIO GitHub releases](https://github.com/namazso/PawnIO.Setup/releases) on first launch and uninstalled on exit. SysDigger communicates with the driver exclusively via DeviceIoControl IOCTLs (through LibreHardwareMonitorLib), so the GPL exception applies — SysDigger's proprietary code does not become GPL.
+- **[Aga.Controls](https://github.com/libertyvnc/Aga.Controls)** (BSD) — tree-view UI control (bundled with LibreHardwareMonitorLib)
+- Python packages: [PySide6](https://www.qt.io) (LGPL-3.0+), [psutil](https://github.com/giampaolo/psutil) (BSD-3-Clause), [requests](https://github.com/psf/requests) (Apache-2.0), [pythonnet](https://github.com/pythonnet/pythonnet) (MIT), [wmi](https://github.com/tjguk/wmi) (MIT), [pywin32](https://github.com/mhammond/pywin32) (MIT-0)
+
+Full license texts and attribution notices: see [THIRD-PARTY-NOTICES](THIRD-PARTY-NOTICES).
+
 ## License
 
 Proprietary — Copyright (c) 2026 Stavros Antoniou. All rights reserved. See [LICENSE](LICENSE) for details.
