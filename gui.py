@@ -6387,6 +6387,30 @@ class InfoWindow(QMainWindow):
         desc.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         layout.addWidget(desc)
 
+        tp_sep = QFrame()
+        tp_sep.setFrameShape(QFrame.Shape.HLine)
+        tp_sep.setStyleSheet(f"color: {_DIVIDER};")
+        layout.addWidget(tp_sep)
+
+        tp_title = QLabel("Third-Party Components")
+        tp_title.setStyleSheet("font-size: 13px; font-weight: 600;")
+        layout.addWidget(tp_title)
+
+        tp = QLabel(
+            "Hardware sensors: LibreHardwareMonitorLib (MPL-2.0) — "
+            "https://github.com/LibreHardwareMonitor/LibreHardwareMonitor\n"
+            "Motherboard/CPU kernel driver: PawnIO (GPL-2.0+ with "
+            "DeviceIoControl exception) — "
+            "https://github.com/namazso/PawnIO\n"
+            "PawnIO installer is downloaded at runtime from the official "
+            "source and removed on exit — not bundled with SysDigger.\n"
+            "Full third-party notices: see THIRD-PARTY-NOTICES file."
+        )
+        tp.setWordWrap(True)
+        tp.setStyleSheet("font-size: 11px; line-height: 1.5;")
+        tp.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        layout.addWidget(tp)
+
         layout.addStretch()
 
         btn_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)

@@ -1,0 +1,134 @@
+SysDigger Third-Party Notices
+=============================
+
+This file lists third-party software components bundled with or used by
+SysDigger, along with their licenses and copyright notices.
+
+
+1. LibreHardwareMonitorLib
+   -----------------------
+   Version: 0.9.6
+   Source:  https://github.com/LibreHardwareMonitor/LibreHardwareMonitor
+   License: Mozilla Public License 2.0 (MPL-2.0)
+
+   Copyright (c) LibreHardwareMonitor and contributors
+
+   The MPL-2.0 license permits use of this library in proprietary
+   applications (Section 3.3 "Larger Work" exception). The MPL-licensed
+   source files remain under MPL-2.0; the combined work (SysDigger) is
+   distributed under its own proprietary license.
+
+   For the full text of the MPL-2.0, see:
+   https://www.mozilla.org/en-US/MPL/2.0/
+
+   Bundled DLLs from LibreHardwareMonitor:
+     - LibreHardwareMonitorLib.dll
+     - HidSharp.dll
+     - RAMSPDToolkit-NDD.dll
+     - DiskInfoToolkit.dll
+     - BlackSharp.Core.dll
+     - System.Memory.dll
+     - System.Runtime.CompilerServices.Unsafe.dll
+     - System.Buffers.dll
+     - System.Numerics.Vectors.dll
+     - System.Threading.Tasks.Extensions.dll
+     - Microsoft.Bcl.AsyncInterfaces.dll
+     - Microsoft.Bcl.HashCode.dll
+     - System.Security.AccessControl.dll
+     - System.Security.Principal.Windows.dll
+     - System.Threading.AccessControl.dll
+     - System.Reflection.Metadata.dll
+     - System.Collections.Immutable.dll
+     - System.Resources.Extensions.dll
+     - System.CodeDom.dll
+     - System.Formats.Nrbf.dll
+     - System.IO.Pipelines.dll
+     - System.Text.Encodings.Web.dll
+     - System.Text.Json.dll
+     - Aga.Controls.dll (BSD license — see below)
+     - Microsoft.Win32.TaskScheduler.dll
+     - OxyPlot.dll
+     - OxyPlot.WindowsForms.dll
+
+
+2. Aga.Controls
+   -------------
+   License: BSD 3-Clause License
+
+   Copyright (c) 2007, Andrey Khataev
+   All rights reserved.
+
+   Bundled as Aga.Controls.dll (tree-view UI control used by
+   LibreHardwareMonitor.exe).
+
+   Redistribution and use in source and binary forms, with or without
+   modification, are permitted provided that the following conditions are met:
+     1. Redistributions of source code must retain the above copyright notice.
+     2. Redistributions in binary form must reproduce the above copyright notice.
+     3. The name of the author may not be used to endorse or promote products
+        derived from this software without specific prior written permission.
+
+
+3. PawnIO Kernel Driver
+   ----------------------
+   Version: 2.2.0
+   Source:  https://github.com/namazso/PawnIO
+   License: GNU General Public License v2.0 or later (GPL-2.0+)
+            with a special exception for DeviceIoControl clients
+
+   Copyright (c) namazso
+
+   Special exception (verbatim from the PawnIO COPYING file):
+
+     "In addition, as a special exception, the copyright holders of PawnIO
+     give you permission to combine PawnIO program with free software
+     programs or libraries that are released under the GNU LGPL and with
+     independent modules that communicate with PawnIO solely through the
+     device IO control interface. You may copy and distribute such a system
+     following the terms of the GNU GPL for PawnIO and the licenses of the
+     other code concerned."
+
+   SysDigger communicates with the PawnIO driver exclusively through the
+   device IO control interface (via LibreHardwareMonitorLib), NOT through
+   the Pawn scripting interface. This exception permits use of PawnIO in
+   SysDigger without causing SysDigger's proprietary code to become GPL.
+
+   For the full text of the GPL-2.0, see:
+   https://www.gnu.org/licenses/old-licenses/gpl-2.0.txt
+
+
+4. PawnIO Installer (PawnIO_setup.exe)
+   ------------------------------------
+   Version: 2.2.0
+   Source:  https://github.com/namazso/PawnIO.Setup
+   License: No open-source license granted for the signed binary
+
+   Copyright (c) 2025 namazso. All rights reserved.
+
+   The PawnIO_setup.exe installer is NOT bundled with SysDigger. It is
+   downloaded at runtime from the official PawnIO GitHub releases page
+   (https://github.com/namazso/PawnIO.Setup/releases) on first launch
+   and uninstalled on application close. SysDigger does not redistribute
+   this binary.
+
+   For licensing inquiries regarding the PawnIO installer, contact:
+   admin@namazso.eu
+
+
+5. Python Packages (pip dependencies)
+   -----------------------------------
+   These packages are installed via pip and used at runtime.
+
+   - psutil        — BSD-3-Clause  (https://github.com/giampaolo/psutil)
+   - PySide6       — LGPL-3.0+    (https://www.qt.io)
+   - pythonnet     — MIT License  (https://github.com/pythonnet/pythonnet)
+   - requests      — Apache-2.0   (https://github.com/psf/requests)
+   - wmi           — MIT License  (https://github.com/tjguk/wmi)
+   - pywin32       — MIT-0        (https://github.com/mhammond/pywin32)
+   - pyinstaller   — GPL-2.0+     (https://github.com/pyinstaller/pyinstaller)
+     (PyInstaller is used as a build tool only; its output is not
+      subject to GPL as it is not linked into the application — it
+      packages the Python runtime and bytecode into a standalone exe.)
+
+   For the full text of each license, see the respective project's
+   LICENSE file in the linked GitHub repository.

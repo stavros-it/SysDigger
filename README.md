@@ -95,6 +95,7 @@ See [BUILD_GUIDE.md](BUILD_GUIDE.md) for detailed build and code signing instruc
 - [GITHUB_SIGNING_GUIDE.md](GITHUB_SIGNING_GUIDE.md) — How to set up GitHub + free SignPath signing
 - [roadmap.md](roadmap.md) — Version history and planned features
 - [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) — Architecture overview
+- [THIRD-PARTY-NOTICES](THIRD-PARTY-NOTICES) — Third-party component licenses and attributions
 
 ## Code signing policy
 
