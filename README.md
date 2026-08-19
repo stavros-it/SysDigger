@@ -15,7 +15,7 @@ and 27 integrated maintenance tools — all in a single dark-themed PySide6 wind
 live search, copy-to-clipboard, and JSON/Text/HTML export.
 
 <p align="center">
-  <img src="app_preview.png" alt="SysDigger" width="800">
+  <img src="app_preview.png" alt="SysDigger" width="500">
 </p>
 
 ## Features
