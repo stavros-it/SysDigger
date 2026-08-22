@@ -150,7 +150,7 @@ The app must NOT call `_start_collection()` in `InfoWindow.__init__()`. Qt proce
 |---|---|---|
 | `gui.py` | ~5830 | Main GUI: all pages, cards, tables, dialogs, exports, `_FlowLayout`, `_ToolCard`, `_Sparkline`, `SettingsDialog` (sidebar-style), `path_select` multi-select input |
 | `collectors.py` | ~3816 | All data collection (OS, HW, net, SW, health, diagnostics, speed test, processes with Disk/Network) |
-| `tools.py` | ~1710 | Tool catalogue: 4 categories, 28 tools, 61 PowerShell modes (includes Autopilot hash with validation, disk analyzer with 8 modes incl. scan-then-pick cleanup, memory diagnostic, hosts editor, WU trigger, appx manager, dev cache cleaner, hibernate manager, UEFI BIOS reboot, MTP/Android USB reset, disk status/online) |
+| `tools.py` | ~1710 | Tool catalogue: 4 categories, 28 tools, 62 PowerShell modes (includes Autopilot hash with validation, disk analyzer with 8 modes incl. scan-then-pick cleanup, memory diagnostic, hosts editor, WU trigger, appx manager, dev cache cleaner, hibernate manager, UEFI BIOS reboot, MTP/Android USB reset, SATA/AHCI controller reset, disk status/online) |
 | `config.py` | ~232 | Config dataclass (23 settings incl. 8 colorization thresholds) + JSON persistence |
 | `sensors.py` | ~115 | LibreHardwareMonitorLib wrapper |
 | `app.py` | ~109 | Entry point: QApplication, icon, AppUserModelID, theme, three-phase show |

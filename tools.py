@@ -805,6 +805,37 @@ Write-Output '      / "File transfer" prompt if shown.'
 Write-Output '============================================================'
 """
 
+_SATA_RESET = r"""Write-Output '============================================================'
+Write-Output ' SA WinTools - Reset SATA / AHCI Controllers'
+Write-Output '============================================================'
+Write-Output ''
+Write-Output '[STEP 1] Finding problematic SATA / AHCI controller entries...'
+$sataDevs = Get-PnpDevice -EA SilentlyContinue | Where-Object {
+    $_.FriendlyName -like '*AHCI*' -or $_.FriendlyName -like '*SATA*'
+}
+if ($sataDevs) {
+    $count = ($sataDevs | Measure-Object).Count
+    Write-Output "    [*] Found $count SATA/AHCI controller entry/entries to remove."
+    foreach ($dev in $sataDevs) {
+        Write-Output "    [-] Removing: $($dev.FriendlyName) [$($dev.InstanceId)]"
+        pnputil /remove-device $dev.InstanceId *>&1 | Write-Output
+    }
+} else {
+    Write-Output '    [INFO] No SATA/AHCI controller entries found to remove.'
+}
+Write-Output ''
+Write-Output '[STEP 2] Forcing a hardware re-scan so Windows reinstalls the'
+Write-Output '        Microsoft Standard SATA AHCI Controller...'
+pnputil /scan-devices *>&1 | Write-Output
+Write-Output ''
+Write-Output '[SUCCESS] SATA / AHCI controller reset completed.'
+Write-Output '[TIP] A system reboot is recommended so the reinstalled driver is'
+Write-Output '      fully loaded. If a storage drive is no longer visible after'
+Write-Output '      the reset, check Disk Management (diskmgmt.msc) — the disk'
+Write-Output '      may need to be brought online or assigned a drive letter.'
+Write-Output '============================================================'
+"""
+
 _SVC_RESTART = r"""Write-Output '============================================================'
 Write-Output ' SA WinTools - Restart Stopped Auto-Start Services'
 Write-Output '============================================================'
@@ -1946,12 +1977,13 @@ CATEGORIES: list[dict] = [
             },
             {
                 "name": "Device Query",
-                "desc": "Lists HID devices, removes problem entries, resets Bluetooth adapters, or repairs MTP/Android USB detection.",
+                "desc": "Lists HID devices, removes problem entries, resets Bluetooth adapters, repairs MTP/Android USB detection, or resets SATA/AHCI controllers.",
                 "modes": [
                     {"label": "HID Device Services", "script": _HID_SERVICES},
                     {"label": "Remove HID Errors", "script": _REMOVE_HID_ERRORS, "confirm": True},
                     {"label": "Reset Bluetooth Adapter", "script": _BT_RESET, "confirm": True},
                     {"label": "Reset MTP / Android USB", "script": _MTP_RESET, "confirm": True},
+                    {"label": "Reset SATA / AHCI Controllers", "script": _SATA_RESET, "confirm": True},
                 ],
             },
             {
