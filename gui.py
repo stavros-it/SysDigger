@@ -6321,7 +6321,7 @@ class InfoWindow(QMainWindow):
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title)
 
-        ver = QLabel("Version 4.17")
+        ver = QLabel("Version 4.18")
         ver.setStyleSheet("font-size: 13px; font-weight: 600;")
         ver.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(ver)

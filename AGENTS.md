@@ -9,7 +9,7 @@
 ## Quick Reference
 
 - **App name:** SysDigger (renamed from "SysPeek" in v4.16, originally "Windows Info" in v4.5)
-- **Version:** 4.17
+- **Version:** 4.18
 - **Entry point:** `sysdigger.pyw` (renamed from `launcher.pyw`)
 - **AppUserModelID:** `"Stavros.SysDigger"`
 - **Window title:** `"SysDigger  ·  Copyright (C) Stavros Antoniou"`
