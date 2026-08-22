@@ -127,7 +127,7 @@ def main() -> None:
     # Fast mode sets SYSDIGGER_FAST_MODE=1 so sensors.py skips pythonnet,
     # saving ~3-6 seconds on startup (no .NET CLR init, no DLL loads,
     # no PawnIO driver install).
-    from launch_menu import show_launch_menu, MODE_NORMAL, MODE_FAST
+    from launch_menu import show_launch_menu, MODE_NORMAL, MODE_FAST, MODE_CANCEL
     mode = show_launch_menu(app)
     if mode == MODE_CANCEL:
         logger.info("User cancelled launch menu — exiting")
