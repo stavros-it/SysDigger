@@ -36,7 +36,7 @@ jobs:
           python -m py_compile `
             app.py gui.py collectors.py sysdigger.pyw tools.py `
             sensors.py helpers.py config.py lhm_process.py `
-            updater.py app_logger.py paths.py
+            updater.py app_logger.py paths.py launch_menu.py
 
       - name: Build with PyInstaller
         run: pyinstaller sysdigger.spec --noconfirm --clean

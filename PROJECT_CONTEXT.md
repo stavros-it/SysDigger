@@ -77,7 +77,8 @@ Version tracked in `lib/version.txt`.
 ```
 SysDigger/
 ├── sysdigger.pyw          # Entry point — double-click to run. Self-elevates to admin, no console
-├── app.py                # Main entry — creates QApplication, Collector, InfoWindow
+├── app.py                # Main entry — creates QApplication, shows launch menu (Normal/Fast), Collector, InfoWindow
+├── launch_menu.py        # Launch mode picker QDialog — Normal (full LHM/PawnIO/.NET) vs Fast (skip pythonnet/PawnIO, saves ~3-6s)
 ├── app_logger.py         # Centralized logging — rotating file handler writing to app.log
 ├── config.py             # Application config (config.json) — 15 settings: refresh intervals, process top N, theme, font, sensor/hardware types, sparkline samples, speed test params, cache TTL, window geometry
 ├── collectors.py         # System data collection: OS, hardware, network, IP, sensors, processes, software, updates, health, speed test, devices, diagnostics, GPU details, VPN, active connections, Wi-Fi, DNS cache, disk benchmark, startup impact (~4130 lines)

@@ -40,10 +40,10 @@ jobs:
           python -m py_compile `
             app.py gui.py collectors.py sysdigger.pyw tools.py `
             sensors.py helpers.py config.py lhm_process.py `
-            updater.py app_logger.py paths.py
+            updater.py app_logger.py paths.py launch_menu.py
 
       - name: Import smoke test (headless Qt)
         env:
           QT_QPA_PLATFORM: offscreen
         run: |
-          python -c "import app, gui, collectors, tools, sensors, helpers, config, lhm_process, updater, app_logger, paths; print('all modules imported OK')"
+          python -c "import app, gui, collectors, tools, sensors, helpers, config, lhm_process, updater, app_logger, paths, launch_menu; print('all modules imported OK')"

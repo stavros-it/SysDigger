@@ -36,6 +36,9 @@ hiddenimports += collect_submodules("psutil")
 tmp_d, tmp_b, tmp_h = collect_all("certifi")
 datas += tmp_d; binaries += tmp_b; hiddenimports += tmp_h
 
+# -- launch_menu (imported lazily inside app.main, after the launch dialog) --
+hiddenimports += ["launch_menu"]
+
 # -- Bundle read-only resources --------------------------------------------
 _base = os.path.abspath(".")
 

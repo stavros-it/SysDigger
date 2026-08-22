@@ -37,6 +37,15 @@ live search, copy-to-clipboard, and JSON/Text/HTML export.
 - Administrator privileges (required for sensor access — UAC prompt on launch)
 - .NET Framework 4.x (pre-installed on Windows 10/11)
 
+## Launch modes
+
+On startup, SysDigger shows a launch mode picker:
+
+- **Normal Mode** — full app. Loads LibreHardwareMonitorLib + PawnIO kernel driver for live CPU/GPU/motherboard sensors (temperatures, fan speeds, voltages, clocks). All 14 pages fully functional. Startup takes ~3-6 seconds longer for driver install.
+- **Fast Mode** — skips LHM / pythonnet / .NET / PawnIO entirely. All pages work except Hardware/Sensors (show WMI fallback or "N/A"). OS, Network, Processes, Software, Devices, Diagnostics, Tools — all fully functional. Saves ~3-6 seconds on startup.
+
+The menu appears on every launch. Pick Fast Mode when you just need to run maintenance tools or check system info without waiting for the sensor stack to load.
+
 ## Download
 
 Download the latest release from the [Releases page](../../releases).
@@ -77,11 +86,12 @@ See [BUILD_GUIDE.md](BUILD_GUIDE.md) for detailed build and code signing instruc
 | File | Role |
 |---|---|
 | `sysdigger.pyw` | Entry point — UAC elevation, crash handler |
-| `app.py` | QApplication setup, theme, LHM bridge launch |
+| `app.py` | QApplication setup, theme, launch menu, LHM bridge launch |
+| `launch_menu.py` | Launch mode picker — Normal (full sensors) vs Fast (skip .NET/PawnIO, ~3-6s faster) |
 | `gui.py` | Main GUI — 13 pages, cards, tables, sparklines, tools, settings |
 | `collectors.py` | All data collection (OS, HW, net, SW, health, diagnostics, processes) |
-| `sensors.py` | LibreHardwareMonitorLib .NET assembly loading |
-| `lhm_process.py` | Portable LHM.exe process manager (kernel driver for motherboard sensors) |
+| `sensors.py` | LibreHardwareMonitorLib .NET assembly loading (skipped in Fast Mode) |
+| `lhm_process.py` | Portable PawnIO installer (kernel driver for motherboard sensors) |
 | `tools.py` | 28 maintenance tools (4 categories, 62 PowerShell modes) |
 | `config.py` | Config dataclass + JSON persistence |
 | `paths.py` | Portable path resolution for frozen exe |

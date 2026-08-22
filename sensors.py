@@ -21,51 +21,58 @@ logger = get_logger(__name__)
 _LHM_AVAILABLE = False
 _LhmHardware = None
 
-try:
-    import clr as _clr
-    from System import AppDomain as _AppDomain
+if os.environ.get("SYSDIGGER_FAST_MODE"):
+    logger.info(
+        "Fast mode active (SYSDIGGER_FAST_MODE=1) — skipping "
+        "LibreHardwareMonitorLib / pythonnet / .NET runtime load. "
+        "Hardware/Sensors pages will show WMI fallback or 'N/A'."
+    )
+else:
+    try:
+        import clr as _clr
+        from System import AppDomain as _AppDomain
 
-    _lib_dir = lib_dir()
-    if os.path.isdir(_lib_dir):
-        logger.info("Loading LibreHardwareMonitorLib from %s", _lib_dir)
-        # Swap in pending .new DLLs from a previous update (before loading)
-        for _f in os.listdir(_lib_dir):
-            if _f.endswith(".new"):
-                _cur = os.path.join(_lib_dir, _f[:-4])
-                _new = os.path.join(_lib_dir, _f)
-                try:
-                    os.replace(_new, _cur)
-                    logger.info("Swapped updated DLL: %s", _f[:-4])
-                except Exception as e:
-                    logger.warning("Failed to swap DLL %s: %s", _f, e)
-        if hasattr(os, "add_dll_directory"):
-            os.add_dll_directory(_lib_dir)
-        os.environ["PATH"] = _lib_dir + os.pathsep + os.environ.get("PATH", "")
+        _lib_dir = lib_dir()
+        if os.path.isdir(_lib_dir):
+            logger.info("Loading LibreHardwareMonitorLib from %s", _lib_dir)
+            # Swap in pending .new DLLs from a previous update (before loading)
+            for _f in os.listdir(_lib_dir):
+                if _f.endswith(".new"):
+                    _cur = os.path.join(_lib_dir, _f[:-4])
+                    _new = os.path.join(_lib_dir, _f)
+                    try:
+                        os.replace(_new, _cur)
+                        logger.info("Swapped updated DLL: %s", _f[:-4])
+                    except Exception as e:
+                        logger.warning("Failed to swap DLL %s: %s", _f, e)
+            if hasattr(os, "add_dll_directory"):
+                os.add_dll_directory(_lib_dir)
+            os.environ["PATH"] = _lib_dir + os.pathsep + os.environ.get("PATH", "")
 
-        def _resolve_lib_assembly(sender, args):
-            simple_name = args.Name.split(",")[0].strip()
-            candidate = os.path.join(_lib_dir, simple_name + ".dll")
-            if os.path.exists(candidate):
-                from System.Reflection import Assembly
-                return Assembly.LoadFrom(candidate)
-            return None
+            def _resolve_lib_assembly(sender, args):
+                simple_name = args.Name.split(",")[0].strip()
+                candidate = os.path.join(_lib_dir, simple_name + ".dll")
+                if os.path.exists(candidate):
+                    from System.Reflection import Assembly
+                    return Assembly.LoadFrom(candidate)
+                return None
 
-        _AppDomain.CurrentDomain.AssemblyResolve += _resolve_lib_assembly
+            _AppDomain.CurrentDomain.AssemblyResolve += _resolve_lib_assembly
 
-        _clr.AddReference("System")
-        _hs_path = os.path.join(_lib_dir, "HidSharp.dll")
-        if os.path.exists(_hs_path):
-            _clr.AddReference(_hs_path)
-        _lhm_path = os.path.join(_lib_dir, "LibreHardwareMonitorLib.dll")
-        _clr.AddReference(_lhm_path)
-        from LibreHardwareMonitor import Hardware as _LhmHardware
-        _LHM_AVAILABLE = True
-        logger.info("LibreHardwareMonitorLib loaded successfully")
-    else:
-        logger.warning("lib/ directory not found: %s", _lib_dir)
-except Exception as e:
-    _LHM_AVAILABLE = False
-    logger.warning("LibreHardwareMonitorLib failed to load: %s", e, exc_info=True)
+            _clr.AddReference("System")
+            _hs_path = os.path.join(_lib_dir, "HidSharp.dll")
+            if os.path.exists(_hs_path):
+                _clr.AddReference(_hs_path)
+            _lhm_path = os.path.join(_lib_dir, "LibreHardwareMonitorLib.dll")
+            _clr.AddReference(_lhm_path)
+            from LibreHardwareMonitor import Hardware as _LhmHardware
+            _LHM_AVAILABLE = True
+            logger.info("LibreHardwareMonitorLib loaded successfully")
+        else:
+            logger.warning("lib/ directory not found: %s", _lib_dir)
+    except Exception as e:
+        _LHM_AVAILABLE = False
+        logger.warning("LibreHardwareMonitorLib failed to load: %s", e, exc_info=True)
 
 
 # ---------------------------------------------------------------------------

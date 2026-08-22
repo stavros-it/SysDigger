@@ -22,7 +22,7 @@ Write-Host "`n[2/5] Compile-checking..." -ForegroundColor Yellow
 python -m py_compile `
     app.py gui.py collectors.py sysdigger.pyw tools.py `
     sensors.py helpers.py config.py lhm_process.py `
-    updater.py app_logger.py paths.py
+    updater.py app_logger.py paths.py launch_menu.py
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Compile check failed!" -ForegroundColor Red
     exit 1

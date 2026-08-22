@@ -19,7 +19,7 @@
 
 ```pwsh
 # Compile-check (run after every code change)
-python -m py_compile app.py gui.py collectors.py sysdigger.pyw tools.py sensors.py helpers.py config.py lhm_process.py paths.py
+python -m py_compile app.py gui.py collectors.py sysdigger.pyw tools.py sensors.py helpers.py config.py lhm_process.py paths.py launch_menu.py
 
 # Test a collector method
 python -c "from collectors import Collector; c = Collector(); c._init_wmi(); c.collect_hardware(); print(c.data.hw_info['gpus'])"
@@ -153,7 +153,8 @@ The app must NOT call `_start_collection()` in `InfoWindow.__init__()`. Qt proce
 | `tools.py` | ~1710 | Tool catalogue: 4 categories, 28 tools, 62 PowerShell modes (includes Autopilot hash with validation, disk analyzer with 8 modes incl. scan-then-pick cleanup, memory diagnostic, hosts editor, WU trigger, appx manager, dev cache cleaner, hibernate manager, UEFI BIOS reboot, MTP/Android USB reset, SATA/AHCI controller reset, disk status/online) |
 | `config.py` | ~232 | Config dataclass (23 settings incl. 8 colorization thresholds) + JSON persistence |
 | `sensors.py` | ~115 | LibreHardwareMonitorLib wrapper |
-| `app.py` | ~109 | Entry point: QApplication, icon, AppUserModelID, theme, three-phase show |
+| `app.py` | ~109 | Entry point: QApplication, icon, AppUserModelID, theme, three-phase show, launch menu (Normal/Fast mode picker) |
+| `launch_menu.py` | ~190 | Launch mode picker QDialog — shown before collectors/gui imports. Normal Mode = full LHM/PawnIO/.NET sensor stack. Fast Mode = skip pythonnet + .NET + PawnIO (saves ~3-6s, Hardware/Sensors pages degrade to WMI fallback). MUST NOT import collectors/sensors (those trigger pythonnet at import time). |
 | `sysdigger.pyw` | ~85 | Launcher: UAC elevation, logging, crash handler |
 | `helpers.py` | ~120 | fmt_bytes, fmt_speed, fmt_uptime, reg_value, etc. |
 | `updater.py` | ~148 | GitHub release updater for LHM DLLs |
@@ -528,3 +529,17 @@ The Tools page execution log (`_tool_log`) shows GUI-side status banners in addi
 2. `_tool_start_time` MUST be set in `_run_powershell_tool` (main thread) BEFORE the worker starts, so `_on_tool_finished` can compute duration. Reset to `0.0` in `_on_tool_clear`.
 3. The worker MUST NOT filter out blank lines, `SA WinTools -` headers, or `=====` separator lines from the streamed output — these provide visual structure (section breaks, tool name banners, dividers). Earlier versions stripped them for "compactness" but that made the log a wall of text.
 4. Long-running scan scripts (`_SCAN_APPDATA_LOCAL`, `_SCAN_APPDATA_ROAMING`, `_SCAN_PROFILE_FILES`, `_SCAN_APPX`, `_DISK_FOLDER_MAP` Phase 2, `_DISK_DUPLICATES` Phase 3) MUST emit per-item or per-N-items progress messages so the user sees activity during multi-second scans.
+
+### 26. Launch menu + Fast Mode (v4.18)
+On startup, `app.py:main()` shows a launch mode picker dialog (`launch_menu.py:show_launch_menu()`) BEFORE importing `collectors` or `gui`. This is critical because `collectors.py:73` eagerly imports `sensors.py`, which loads pythonnet + 12 .NET DLLs + .NET CLR runtime at import time (~200-500ms) — and `app.py` needs to set `SYSDIGGER_FAST_MODE=1` BEFORE that import happens so `sensors.py` can skip the pythonnet block.
+
+**Normal Mode:** Full app. `app.py` launches a background thread (`_start_lhm_bridge`) that downloads + runs `PawnIO_setup.exe -install` (~2.5s), waits for the driver (~0.5-3s), then calls `collector.set_lhm_process(proc)` to invalidate the cached LHM Computer so the next `_collect_sensors()` recreates it with the driver available. All 14 pages fully functional.
+
+**Fast Mode:** Skips the `_start_lhm_bridge` thread entirely. `SYSDIGGER_FAST_MODE=1` env var is set before `from collectors import Collector` runs, so `sensors.py` skips the pythonnet loading block (`_LHM_AVAILABLE = False`, `_LhmHardware = None`). The 12 .NET DLLs are never loaded, PawnIO is never downloaded/installed. All LHM-touching collector methods already have graceful fallbacks (`_collect_sensors` → `_collect_sensors_wmi_fallback`, `_get_lhm_computer` returns None early). Hardware/Sensors pages show WMI fallback (ACPI thermal zone, Win32_Fan) or "Not available" card. All other pages (OS, Network, Processes, Software, Devices, Diagnostics, Tools) work fully. Saves ~3-6 seconds on startup.
+
+**Invariants:**
+1. `launch_menu.py` MUST NOT import `collectors` or `sensors` — those trigger pythonnet. Only PySide6 + stdlib imports allowed.
+2. `app.py` MUST defer `from collectors import Collector` and `from gui import ...` to AFTER `show_launch_menu()` returns and the env var is set.
+3. `sensors.py` checks `os.environ.get("SYSDIGGER_FAST_MODE")` at module level. If set, the entire pythonnet `try` block is skipped.
+4. `closeEvent` in `gui.py` already guards with `if lhm_proc is not None` — in fast mode `collector._lhm_process` stays `None`, so the PawnIO uninstall block is correctly skipped.
+5. `Collector.close()` (PDH query cleanup) is safe to call in fast mode — `_pdh_query` is only created when `_read_amd_per_core_freqs()` is called, which only runs in the LHM sensor path (not reached in fast mode). The `if self._pdh_query is not None` guard handles this.

@@ -14,9 +14,7 @@ from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication
 
 from app_logger import get_logger
-from collectors import Collector
 from config import get_config
-from gui import InfoWindow, build_qss
 from paths import icon_path
 
 logger = get_logger(__name__)
@@ -63,7 +61,7 @@ def _is_elevated() -> bool:
 
 def main() -> None:
     logger.info("Starting QApplication")
-    
+
     # Warn (not block) if not elevated — sensor access will be limited.
     if not _is_elevated():
         logger.warning(
@@ -123,6 +121,30 @@ def main() -> None:
         logger.info("Using font: %s", cfg.font_family)
     app.setFont(font)
 
+    # --- Launch mode picker -------------------------------------------------
+    # Show the launch menu BEFORE importing collectors/gui — those modules
+    # import sensors.py which loads pythonnet + .NET CLR at import time.
+    # Fast mode sets SYSDIGGER_FAST_MODE=1 so sensors.py skips pythonnet,
+    # saving ~3-6 seconds on startup (no .NET CLR init, no DLL loads,
+    # no PawnIO driver install).
+    from launch_menu import show_launch_menu, MODE_NORMAL, MODE_FAST
+    mode = show_launch_menu(app)
+    if mode == MODE_CANCEL:
+        logger.info("User cancelled launch menu — exiting")
+        return
+    fast_mode = (mode == MODE_FAST)
+    if fast_mode:
+        os.environ["SYSDIGGER_FAST_MODE"] = "1"
+        logger.info("Fast mode selected — skipping LHM / pythonnet / PawnIO")
+    else:
+        os.environ.pop("SYSDIGGER_FAST_MODE", None)
+        logger.info("Normal mode selected — loading full sensor stack")
+
+    # Now import collectors + gui (these trigger sensors.py, which checks
+    # SYSDIGGER_FAST_MODE and skips pythonnet if set).
+    from collectors import Collector
+    from gui import InfoWindow, build_qss
+
     logger.info("Creating Collector")
     collector = Collector()
 
@@ -131,29 +153,31 @@ def main() -> None:
     # sensors (fans, voltages, VRM temps) and AMD CPU MSR registers
     # (clock, power, voltage, temperature).  The driver is uninstalled
     # on close — nothing permanent is left behind (portable mode).
-    def _start_lhm_bridge() -> None:
-        try:
-            from lhm_process import LhmProcess
-            proc = LhmProcess()
-            # Attach to collector immediately so closeEvent can stop it
-            # even if the app is closed during download/install.
-            collector.set_lhm_process(proc)
-            if not proc.ensure_downloaded():
-                logger.warning(
-                    "PawnIO unavailable: %s", proc.download_error
-                )
-                return
-            if proc.start():
-                proc.wait_for_driver(timeout=20.0)
-                # Re-attach to trigger Computer invalidation now that
-                # the driver is ready.
+    # SKIPPED in fast mode — pythonnet/.NET/PawnIO not loaded.
+    if not fast_mode:
+        def _start_lhm_bridge() -> None:
+            try:
+                from lhm_process import LhmProcess
+                proc = LhmProcess()
+                # Attach to collector immediately so closeEvent can stop it
+                # even if the app is closed during download/install.
                 collector.set_lhm_process(proc)
-        except Exception as e:
-            logger.warning("PawnIO bridge failed: %s", e, exc_info=True)
+                if not proc.ensure_downloaded():
+                    logger.warning(
+                        "PawnIO unavailable: %s", proc.download_error
+                    )
+                    return
+                if proc.start():
+                    proc.wait_for_driver(timeout=20.0)
+                    # Re-attach to trigger Computer invalidation now that
+                    # the driver is ready.
+                    collector.set_lhm_process(proc)
+            except Exception as e:
+                logger.warning("PawnIO bridge failed: %s", e, exc_info=True)
 
-    import threading as _threading
-    _lhm_thread = _threading.Thread(target=_start_lhm_bridge, daemon=True)
-    _lhm_thread.start()
+        import threading as _threading
+        _lhm_thread = _threading.Thread(target=_start_lhm_bridge, daemon=True)
+        _lhm_thread.start()
 
     logger.info("Creating main window")
     window = InfoWindow(collector)
