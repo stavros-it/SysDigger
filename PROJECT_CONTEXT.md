@@ -22,7 +22,7 @@ system information in a modern, dark-themed GUI. It shows:
 - **Health** — disk SMART status, Windows Defender, firewall, Windows activation status, battery wear
 - **Diagnostics** — event logs (System + Application, 200 each, color-coded), BSOD history, crash dump settings, system restore points, environment variables, PATH entries, DirectX/D3D feature levels (via ctypes `D3D11CreateDevice`), power plan
 - **Speed Test** — download/upload via Cloudflare (99MB/50MB), bufferbloat grade (A-F)
-- **Windows Tools** — 27 maintenance utilities across 4 categories (System Repair, Maintenance, Hardware & Diagnostics, System Info & Status) powered by PowerShell subprocess execution with live-streamed output: SFC, DISM (Clean/Repair), WinRE Manager, Cleanup, Disk Analyzer (large files / top folders / recursive folder size map / duplicate file finder + scan-then-pick cleanup of biggest AppData folders or user profile files), Appx Manager (uninstall Appx packages by size), Dev Cache Cleaner (npm/pip cache + uv / LM Studio / Vortex / RSI Launcher updater folders), Hibernate Manager (enable/disable), Reset Spooler, Install/Uninstall repair, Flush Network (6 modes), Trim SSD, Check HDD, Device Query (4 modes — HID services, remove HID errors, reset Bluetooth adapter, reset MTP/Android USB), Services Check, Memory Diagnostic (GUI + schedule on reboot), Time Sync, Activation, Wi-Fi, Firewall, Power & System, Autopilot Hash, Hosts File Editor, Windows Update (scan + install), UEFI BIOS Reboot (shutdown /r /fw /t 0)
+- **Windows Tools** — 28 maintenance utilities across 4 categories (System Repair, Maintenance, Hardware & Diagnostics, System Info & Status) powered by PowerShell subprocess execution with live-streamed output: SFC, DISM (Clean/Repair), WinRE Manager, Cleanup, Disk Analyzer (large files / top folders / recursive folder size map / duplicate file finder + scan-then-pick cleanup of biggest AppData folders or user profile files), Appx Manager (uninstall Appx packages by size), Dev Cache Cleaner (npm/pip cache + uv / LM Studio / Vortex / RSI Launcher updater folders), Hibernate Manager (enable/disable), Reset Spooler, Install/Uninstall repair, Flush Network (6 modes), Trim SSD, Check HDD, Disk Status (list status / bring disk online), Device Query (4 modes — HID services, remove HID errors, reset Bluetooth adapter, reset MTP/Android USB), Services Check, Memory Diagnostic (GUI + schedule on reboot), Time Sync, Activation, Wi-Fi, Firewall, Power & System, Autopilot Hash, Hosts File Editor, Windows Update (scan + install), UEFI BIOS Reboot (shutdown /r /fw /t 0)
 
 The app has a **live search** feature that filters across all fields instantly,
 **copy to clipboard** from any table (Ctrl+C or right-click), and
@@ -87,7 +87,7 @@ SysDigger/
 ├── paths.py              # Portable path resolution — resource_dir() / data_dir() for frozen-exe support
 ├── updater.py            # GitHub release updater for LHM DLLs
 ├── helpers.py            # Formatting & utility helpers (fmt_bytes, fmt_speed, reg_value, etc.)
-├── tools.py              # Windows maintenance tools catalogue: 4 categories / 27 tools / 59 modes (PowerShell scripts ported verbatim from `tools source/`, plus v4.11 scan-then-pick cleanup scripts)
+├── tools.py              # Windows maintenance tools catalogue: 4 categories / 28 tools / 61 modes (PowerShell scripts ported verbatim from `tools source/`, plus v4.11 scan-then-pick cleanup scripts)
 ├── install_deps.bat      # Installs all pip packages, verifies imports, checks for DLLs
 ├── app.log               # Application log (rotating, 2MB max, 3 backups)
 ├── config.json           # User settings (15 settings: refresh intervals, process top N, theme, font, compact/progress, sensor/hardware types, sparkline samples, speed test params, cache TTL, window geometry)
@@ -283,7 +283,7 @@ reuses the verbatim PowerShell scripts and runs them as hidden-window
 subprocesses with stdout streamed live into a Qt log panel.
 
 **Tool catalogue (`tools.py`):**
-- 4 categories, 27 tools, 59 modes total
+- 4 categories, 28 tools, 61 modes total
 - Each mode carries: `label`, `script` (PowerShell body), and optional
   flags: `confirm` (destructive — show Yes/No dialog first), `reboot`
   (show "reboot required" notice after), `input` (collect user input

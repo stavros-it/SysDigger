@@ -11,7 +11,7 @@
 
 Windows system information and diagnostics viewer with a Fluent-style GUI. SysDigger
 surfaces everything from CPU/GPU sensors and live network connections to BSOD history
-and 27 integrated maintenance tools — all in a single dark-themed PySide6 window with
+and 28 integrated maintenance tools — all in a single dark-themed PySide6 window with
 live search, copy-to-clipboard, and JSON/Text/HTML export.
 
 <p align="center">
@@ -29,7 +29,7 @@ live search, copy-to-clipboard, and JSON/Text/HTML export.
 - **Devices** — USB, Bluetooth, printers, audio devices
 - **Health** — Windows Defender, activation, battery wear, restore points
 - **Diagnostics** — event logs, BSOD history, crash dumps, DirectX/D3D feature levels, environment variables, PATH entries
-- **Tools** — 27 integrated maintenance utilities (disk cleanup, SFC/DISM, disk analyzer with scan-then-pick cleanup, Appx manager, dev cache cleaner, hibernate manager, hosts editor, memory diagnostic, Windows Update trigger, UEFI BIOS reboot, Autopilot hash export, and more)
+- **Tools** — 28 integrated maintenance utilities (disk cleanup, SFC/DISM, disk analyzer with scan-then-pick cleanup, Appx manager, dev cache cleaner, hibernate manager, hosts editor, memory diagnostic, Windows Update trigger, UEFI BIOS reboot, Autopilot hash export, MTP/Android USB repair, disk status/online, and more)
 
 ## Requirements
 
@@ -82,7 +82,7 @@ See [BUILD_GUIDE.md](BUILD_GUIDE.md) for detailed build and code signing instruc
 | `collectors.py` | All data collection (OS, HW, net, SW, health, diagnostics, processes) |
 | `sensors.py` | LibreHardwareMonitorLib .NET assembly loading |
 | `lhm_process.py` | Portable LHM.exe process manager (kernel driver for motherboard sensors) |
-| `tools.py` | 27 maintenance tools (4 categories, 59 PowerShell modes) |
+| `tools.py` | 28 maintenance tools (4 categories, 61 PowerShell modes) |
 | `config.py` | Config dataclass + JSON persistence |
 | `paths.py` | Portable path resolution for frozen exe |
 | `helpers.py` | Formatting utilities (bytes, speed, uptime) |

@@ -637,6 +637,86 @@ Write-Output '[SUCCESS] Task completed.'
 Write-Output '============================================================'
 """
 
+_DISK_STATUS = r"""Write-Output '============================================================'
+Write-Output ' SA WinTools - Disk Status (Get-Disk)'
+Write-Output '============================================================'
+Write-Output ''
+try {
+    $disks = Get-Disk -EA Stop
+    if (-not $disks) {
+        Write-Output '[!] No disks were detected on this system.'
+        Write-Output '============================================================'
+        return
+    }
+    Write-Output '[*] Detected disks:'
+    Write-Output ''
+    $disks | Select-Object Number, FriendlyName, IsOffline, OperationalStatus |
+        Format-Table -AutoSize | Out-String -Width 4096 | Write-Output
+    $offline = $disks | Where-Object { $_.IsOffline }
+    if ($offline) {
+        Write-Output "[!] Offline disks detected (Number(s): $(( $offline | ForEach-Object { $_.Number }) -join ', '))."
+        Write-Output '[TIP] Use the "Bring Disk Online" mode to enable a disk by its Number.'
+    } else {
+        Write-Output '[OK] All detected disks are online.'
+    }
+} catch {
+    Write-Output "[!] Failed to enumerate disks: $($_.Exception.Message)"
+}
+Write-Output ''
+Write-Output '[SUCCESS] Disk status query completed.'
+Write-Output '============================================================'
+"""
+
+_DISK_ONLINE = r"""$diskNum='__INPUT__'
+Write-Output '============================================================'
+Write-Output ' SA WinTools - Bring Disk Online (Set-Disk)'
+Write-Output " Target Disk Number: $diskNum"
+Write-Output '============================================================'
+Write-Output ''
+if (-not ($diskNum -match '^\d+$')) {
+    Write-Output "[!] Invalid disk number: '$diskNum'. Must be a non-negative integer."
+    Write-Output '============================================================'
+    return
+}
+try {
+    $disk = Get-Disk -Number ([int]$diskNum) -EA Stop
+} catch {
+    Write-Output "[!] Disk number $diskNum was not found: $($_.Exception.Message)"
+    Write-Output '[TIP] Use the "List Disk Status" mode to see all available disk numbers.'
+    Write-Output '============================================================'
+    return
+}
+Write-Output "[*] Disk $diskNum - $($disk.FriendlyName)"
+Write-Output "    Current IsOffline state: $($disk.IsOffline)"
+Write-Output "    Current OperationalStatus: $($disk.OperationalStatus)"
+if (-not $disk.IsOffline) {
+    Write-Output '[OK] Disk is already online. No action needed.'
+    Write-Output '============================================================'
+    return
+}
+Write-Output '[*] Bringing disk online...'
+try {
+    Set-Disk -Number ([int]$diskNum) -IsOffline $false -EA Stop
+    Write-Output '    [OK] Set-Disk completed without errors.'
+} catch {
+    Write-Output "    [!] Set-Disk failed: $($_.Exception.Message)"
+    Write-Output '============================================================'
+    return
+}
+Write-Output ''
+Write-Output '[*] Verifying new state...'
+$disk2 = Get-Disk -Number ([int]$diskNum) -EA SilentlyContinue
+if ($disk2) {
+    Write-Output "    IsOffline:        $($disk2.IsOffline)"
+    Write-Output "    OperationalStatus: $($disk2.OperationalStatus)"
+}
+Write-Output ''
+Write-Output '[SUCCESS] Bring-disk-online operation completed.'
+Write-Output '[TIP] If the disk has no drive letter, use Disk Management (diskmgmt.msc)'
+Write-Output '      or "Assign Drive Letter" to mount a partition.'
+Write-Output '============================================================'
+"""
+
 _HID_SERVICES = r"""Write-Output '============================================================'
 Write-Output ' SA WinTools - HID Device Services (ROOT\HIDCLASS)'
 Write-Output '============================================================'
@@ -1846,6 +1926,23 @@ CATEGORIES: list[dict] = [
                     "input": {"type": "hdd_check"},
                     "confirm": True,
                 }],
+            },
+            {
+                "name": "Disk Status",
+                "desc": "Lists all disks with their online/offline status, or brings an offline disk online by its disk number.",
+                "modes": [
+                    {"label": "List Disk Status", "script": _DISK_STATUS},
+                    {
+                        "label": "Bring Disk Online...",
+                        "script": _DISK_ONLINE,
+                        "input": {
+                            "type": "text",
+                            "label": "Enter the disk number to bring online (e.g. 1):",
+                            "placeholder": "Disk number — find it via \"List Disk Status\"",
+                        },
+                        "confirm": True,
+                    },
+                ],
             },
             {
                 "name": "Device Query",
