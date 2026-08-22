@@ -82,7 +82,7 @@ See [BUILD_GUIDE.md](BUILD_GUIDE.md) for detailed build and code signing instruc
 | `collectors.py` | All data collection (OS, HW, net, SW, health, diagnostics, processes) |
 | `sensors.py` | LibreHardwareMonitorLib .NET assembly loading |
 | `lhm_process.py` | Portable LHM.exe process manager (kernel driver for motherboard sensors) |
-| `tools.py` | 27 maintenance tools (4 categories, 58 PowerShell modes) |
+| `tools.py` | 27 maintenance tools (4 categories, 59 PowerShell modes) |
 | `config.py` | Config dataclass + JSON persistence |
 | `paths.py` | Portable path resolution for frozen exe |
 | `helpers.py` | Formatting utilities (bytes, speed, uptime) |

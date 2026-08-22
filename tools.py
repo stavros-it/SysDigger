@@ -690,6 +690,41 @@ Write-Output '[SUCCESS] Bluetooth adapter reset completed.'
 Write-Output '============================================================'
 """
 
+_MTP_RESET = r"""Write-Output '============================================================'
+Write-Output ' SA WinTools - Reset MTP / Android USB Devices'
+Write-Output '============================================================'
+Write-Output ''
+Write-Output '[STEP 1] Enabling MTP (WPD Automation) service...'
+Set-Service -Name 'WPDBusEnum' -StartupType Automatic
+Start-Service -Name 'WPDBusEnum' -ErrorAction SilentlyContinue
+Write-Output '    [OK] WPDBusEnum service enabled and started.'
+Write-Output ''
+Write-Output '[STEP 2] Removing problematic or hidden MTP / Android devices'
+Write-Output '        so Windows can re-detect them cleanly...'
+$mtpDevices = Get-PnpDevice | Where-Object {
+    $_.FriendlyName -like '*MTP*' -or $_.FriendlyName -like '*Android*'
+}
+if ($mtpDevices) {
+    $count = ($mtpDevices | Measure-Object).Count
+    Write-Output "    [*] Found $count MTP/Android device entry/entries to remove."
+    foreach ($dev in $mtpDevices) {
+        Write-Output "    [-] Removing: $($dev.FriendlyName) [$($dev.InstanceId)]"
+        pnputil /remove-device $dev.InstanceId *>&1 | Write-Output
+    }
+} else {
+    Write-Output '    [INFO] No MTP/Android devices found to remove.'
+}
+Write-Output ''
+Write-Output '[STEP 3] Forcing a re-scan for new USB devices...'
+pnputil /scan-devices *>&1 | Write-Output
+Write-Output ''
+Write-Output '[SUCCESS] MTP / Android device reset completed.'
+Write-Output '[TIP] Reconnect your phone/tablet via USB. If still not detected,'
+Write-Output '      unlock the device screen and accept the "Allow USB debugging"'
+Write-Output '      / "File transfer" prompt if shown.'
+Write-Output '============================================================'
+"""
+
 _SVC_RESTART = r"""Write-Output '============================================================'
 Write-Output ' SA WinTools - Restart Stopped Auto-Start Services'
 Write-Output '============================================================'
@@ -1814,11 +1849,12 @@ CATEGORIES: list[dict] = [
             },
             {
                 "name": "Device Query",
-                "desc": "Lists HID devices, removes problem entries, or resets Bluetooth adapters.",
+                "desc": "Lists HID devices, removes problem entries, resets Bluetooth adapters, or repairs MTP/Android USB detection.",
                 "modes": [
                     {"label": "HID Device Services", "script": _HID_SERVICES},
                     {"label": "Remove HID Errors", "script": _REMOVE_HID_ERRORS, "confirm": True},
                     {"label": "Reset Bluetooth Adapter", "script": _BT_RESET, "confirm": True},
+                    {"label": "Reset MTP / Android USB", "script": _MTP_RESET, "confirm": True},
                 ],
             },
             {
