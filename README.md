@@ -111,7 +111,7 @@ See [BUILD_GUIDE.md](BUILD_GUIDE.md) for detailed build and code signing instruc
 | `collectors.py` | All data collection (OS, HW, net, SW, health, diagnostics, processes) |
 | `sensors.py` | LibreHardwareMonitorLib .NET assembly loading (skipped in Fast Mode) |
 | `lhm_process.py` | Portable PawnIO installer (kernel driver for motherboard sensors) |
-| `tools.py` | 29 maintenance tools (4 categories, 67 PowerShell modes) |
+| `tools.py` | 29 maintenance tools (4 categories, 68 PowerShell modes) |
 | `tools source/DiskRescueLib.ps1` | Disk Rescue engine — original failing-disk mapper + bad-aware copier (see Acknowledgements) |
 | `config.py` | Config dataclass + JSON persistence |
 | `paths.py` | Portable path resolution for frozen exe |

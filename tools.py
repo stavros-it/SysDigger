@@ -1741,6 +1741,28 @@ Write-Output '[SUCCESS] RSI Launcher updater removal completed.'
 Write-Output '============================================================'
 """
 
+_REMOVE_JCODE_DATA = r"""Write-Output '============================================================'
+Write-Output ' SA WinTools - Remove jcode Data'
+Write-Output '============================================================'
+Write-Output ''
+$target = "$env:LOCALAPPDATA\jcode"
+if (-not (Test-Path $target)) {
+    Write-Output "[INFO] Not found - nothing to clean: $target"
+    Write-Output '============================================================'
+    return
+}
+$size = (Get-ChildItem $target -Recurse -Force -File -EA SilentlyContinue |
+         Measure-Object -Property Length -Sum).Sum
+if (-not $size) { $size = [long]0 }
+$mb = [math]::Round($size / 1MB, 1)
+Write-Output "[*] Clearing: $target ($mb MB)"
+Remove-Item -Path "$env:LOCALAPPDATA\jcode\*" -Recurse -Force -ErrorAction SilentlyContinue
+Write-Output "[OK] Cleared ($mb MB reclaimed)."
+Write-Output ''
+Write-Output '[SUCCESS] jcode data removal completed.'
+Write-Output '============================================================'
+"""
+
 
 # ---------------------------------------------------------------------------
 #  Hibernate manager scripts
@@ -1998,6 +2020,7 @@ CATEGORIES: list[dict] = [
                     {"label": "Remove LM Studio Updater", "script": _REMOVE_LMSTUDIO_UPDATER, "confirm": True},
                     {"label": "Remove Vortex Updater", "script": _REMOVE_VORTEX_UPDATER, "confirm": True},
                     {"label": "Remove RSI Launcher Updater", "script": _REMOVE_RSI_UPDATER, "confirm": True},
+                    {"label": "Remove jcode Data", "script": _REMOVE_JCODE_DATA, "confirm": True},
                 ],
             },
             {
