@@ -17,6 +17,9 @@ cache/
 energy-report.html
 battery-report.html
 
+# Disk Rescue runtime data (maps + copy reports, generated per-user)
+DiskRescue/
+
 # LHM.exe / PawnIO installer downloaded at runtime (the DLLs in lib/ ARE committed)
 lib/lhm_standalone/
 lib/pawnio/
