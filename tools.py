@@ -42,6 +42,9 @@ _APP_DIR = resource_dir()
 # The shared PowerShell library used by the Install/Uninstall tools.
 LIB_PATH = os.path.join(_APP_DIR, "tools source", "SA_WinTools_Lib.ps1")
 
+# The Disk Rescue engine (failing-disk mapper + bad-aware copier).
+DISKRESCUE_PATH = os.path.join(_APP_DIR, "tools source", "DiskRescueLib.ps1")
+
 # Where registry backups are written by the Install/Uninstall *Fix* mode.
 BACKUP_ROOT = os.path.join(_APP_DIR, "SA_WinTools_RegBackup")
 
@@ -1788,13 +1791,96 @@ Write-Output '============================================================'
 
 
 # ---------------------------------------------------------------------------
+#  Disk Rescue - failing-disk mapper + bad-aware copier (engine in
+#  tools source/DiskRescueLib.ps1, referenced via __DISKRESCUE__)
+# ---------------------------------------------------------------------------
+_RESCUE_LIST = r""". '__DISKRESCUE__'
+Show-DiskRescueDisks
+"""
+
+_RESCUE_SCAN = r""". '__DISKRESCUE__'
+$v = '__INPUT__'
+if ($v -match '^(\d+)\|(.+)$') {
+    $diskNum = [int]$Matches[1]
+    $mapPath = $Matches[2]
+} elseif ($v -match '^\d+$') {
+    $diskNum = [int]$v
+    $mapPath = Get-DiskRescueMapPath -DiskNumber $diskNum
+} else {
+    Write-Output "[ERROR] '$v' is not a disk number. Run 'List Disks' first and enter the number of the FAILING disk."
+    Write-Output "[HINT] To store the map somewhere else (e.g. Documents is on the failing disk), use:  N|C:\path\map.json"
+    return
+}
+try {
+    Invoke-DiskRescueScan -Disk $diskNum -Map $mapPath
+} catch {
+    Write-Output ("[ERROR] " + $_.Exception.Message)
+    Write-Output "[HINT] The map must be saved on a DIFFERENT physical disk than the one being scanned - retry with:  N|D:\somewhere\map.json"
+}
+"""
+
+_RESCUE_REPORT = r""". '__DISKRESCUE__'
+$v = '__INPUT__'
+if ($v -match '^\d+$') { $p = Get-DiskRescueMapPath -DiskNumber ([int]$v) } else { $p = $v }
+if (-not (Test-Path -LiteralPath $p)) {
+    Write-Output "[ERROR] Map not found: $p"
+    Write-Output "[HINT] Enter a disk number to use the default map location (Documents\DiskRescue\diskN-map.json), or the full path to an existing .json map."
+    return
+}
+Show-DiskRescueReport -Map $p
+"""
+
+_RESCUE_COPY = r""". '__DISKRESCUE__'
+$src = '__DRIVE__:'
+$dest = '__DEST__'
+$mv = '__MAP__'
+if ([string]::IsNullOrWhiteSpace($dest)) {
+    Write-Output '[ERROR] No destination folder was given.'
+    return
+}
+$mp = ''
+if ($mv -match '^\d+$') {
+    $mp = Get-DiskRescueMapPath -DiskNumber ([int]$mv)
+} elseif (-not [string]::IsNullOrWhiteSpace($mv)) {
+    $mp = $mv
+} else {
+    try {
+        $dn = (Get-Partition -DriveLetter $src.TrimEnd(':') -ErrorAction Stop).DiskNumber
+        $cand = Get-DiskRescueMapPath -DiskNumber $dn
+        if (Test-Path -LiteralPath $cand) { $mp = $cand }
+    } catch { }
+}
+if ([string]::IsNullOrWhiteSpace($mp)) {
+    Write-Output '[INFO] No map found for this disk - copying with per-chunk watchdog protection only (still far safer than a normal copy on a failing disk).'
+}
+try {
+    Invoke-DiskRescueCopy -Source $src -Destination $dest -Map $mp
+} catch {
+    Write-Output ("[ERROR] " + $_.Exception.Message)
+    Write-Output "[HINT] The destination must be a folder on a DIFFERENT physical disk than the source."
+}
+"""
+
+_RESCUE_LOST = r""". '__DISKRESCUE__'
+$v = '__INPUT__'
+if ($v -match '^\d+$') { $p = Get-DiskRescueReportPath -DiskNumber ([int]$v) } else { $p = $v }
+if (-not (Test-Path -LiteralPath $p)) {
+    Write-Output "[ERROR] Copy report not found: $p"
+    Write-Output "[HINT] Run 'Copy Files (Bad-Aware)' first. Enter a disk number for the default report location (Documents\DiskRescue\diskN-copy-report.txt), or the full path to a report .txt."
+    return
+}
+Show-DiskRescueLost -Report $p
+"""
+
+
+# ---------------------------------------------------------------------------
 #  Tool catalogue
 # ---------------------------------------------------------------------------
 # Each category has a colour key (mapped to a QSS accent in gui.py).
 # Each tool has a list of modes; a mode may carry:
 #   confirm : show a Yes/No confirmation dialog before running
 #   reboot  : show a "reboot required" status notice after running
-#   input   : {"type": "text"|"drive"|"hdd_check"|"path_select", ...}
+#   input   : {"type": "text"|"drive"|"hdd_check"|"path_select"|"rescue_copy", ...}
 #             collected before run. path_select is a two-phase scan-then-pick
 #             flow: it carries a scan_script + script with __PATHS__ token.
 CATEGORIES: list[dict] = [
@@ -1959,6 +2045,46 @@ CATEGORIES: list[dict] = [
                 }],
             },
             {
+                "name": "Disk Rescue",
+                "desc": "Recovers files from a failing disk: maps readable vs damaged regions with read-only timed probes, then copies files off it, skipping damaged areas (zero-filled) instead of stalling forever.",
+                "modes": [
+                    {"label": "List Disks", "script": _RESCUE_LIST},
+                    {
+                        "label": "Scan Disk (Build Map)...",
+                        "script": _RESCUE_SCAN,
+                        "input": {
+                            "type": "text",
+                            "label": "Enter the disk number of the FAILING disk to scan:",
+                            "placeholder": "e.g. 1  -  or  1|D:\\maps\\disk1.json  for a custom map location",
+                        },
+                    },
+                    {
+                        "label": "Show Map Report...",
+                        "script": _RESCUE_REPORT,
+                        "input": {
+                            "type": "text",
+                            "label": "Disk number or full path to a map .json:",
+                            "placeholder": "e.g. 1  (uses Documents\\DiskRescue\\disk1-map.json)",
+                        },
+                    },
+                    {
+                        "label": "Copy Files (Bad-Aware)...",
+                        "script": _RESCUE_COPY,
+                        "input": {"type": "rescue_copy"},
+                        "confirm": True,
+                    },
+                    {
+                        "label": "Show Lost Files...",
+                        "script": _RESCUE_LOST,
+                        "input": {
+                            "type": "text",
+                            "label": "Disk number or full path to a copy-report .txt:",
+                            "placeholder": "e.g. 1  (uses Documents\\DiskRescue\\disk1-copy-report.txt)",
+                        },
+                    },
+                ],
+            },
+            {
                 "name": "Disk Status",
                 "desc": "Lists all disks with their online/offline status, or brings an offline disk online by its disk number.",
                 "modes": [
@@ -2094,4 +2220,7 @@ def resolve_placeholders(script: str) -> str:
     ``__INPUT__``) are substituted by the GUI just before running, after it
     has collected the user's input.
     """
-    return script.replace("__LIB__", LIB_PATH).replace("__BACKUP__", BACKUP_ROOT)
+    return (script
+            .replace("__LIB__", LIB_PATH)
+            .replace("__DISKRESCUE__", DISKRESCUE_PATH)
+            .replace("__BACKUP__", BACKUP_ROOT))

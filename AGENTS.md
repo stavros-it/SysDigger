@@ -9,7 +9,7 @@
 ## Quick Reference
 
 - **App name:** SysDigger (renamed from "SysPeek" in v4.16, originally "Windows Info" in v4.5)
-- **Version:** 4.18
+- **Version:** 4.19
 - **Entry point:** `sysdigger.pyw` (renamed from `launcher.pyw`)
 - **AppUserModelID:** `"Stavros.SysDigger"`
 - **Window title:** `"SysDigger  ·  Copyright (C) Stavros Antoniou"`
@@ -150,7 +150,8 @@ The app must NOT call `_start_collection()` in `InfoWindow.__init__()`. Qt proce
 |---|---|---|
 | `gui.py` | ~5830 | Main GUI: all pages, cards, tables, dialogs, exports, `_FlowLayout`, `_ToolCard`, `_Sparkline`, `SettingsDialog` (sidebar-style), `path_select` multi-select input |
 | `collectors.py` | ~3816 | All data collection (OS, HW, net, SW, health, diagnostics, speed test, processes with Disk/Network) |
-| `tools.py` | ~1710 | Tool catalogue: 4 categories, 28 tools, 62 PowerShell modes (includes Autopilot hash with validation, disk analyzer with 8 modes incl. scan-then-pick cleanup, memory diagnostic, hosts editor, WU trigger, appx manager, dev cache cleaner, hibernate manager, UEFI BIOS reboot, MTP/Android USB reset, SATA/AHCI controller reset, disk status/online) |
+| `tools.py` | ~2280 | Tool catalogue: 4 categories, 29 tools, 67 PowerShell modes (includes Autopilot hash with validation, disk analyzer with 8 modes incl. scan-then-pick cleanup, memory diagnostic, hosts editor, WU trigger, appx manager, dev cache cleaner, hibernate manager, UEFI BIOS reboot, MTP/Android USB reset, SATA/AHCI controller reset, disk status/online, disk rescue) |
+| `tools source/DiskRescueLib.ps1` | ~1720 | Disk Rescue engine (v4.19, original proprietary code): C# Add-Type raw-probe session (overlapped reads + watchdog timeout + CancelIoEx + handle reopen), C# TimedFileReader (per-chunk watchdog file reads), C# NtfsTools (FSCTL_GET_RETRIEVAL_POINTERS extents + cluster size), JSON map persistence (atomic save, checkpoints, resume), hierarchical GOOD-first scanner with recovery gate, ASCII map report, bad-aware copier (extent-vs-BAD intersection, zero-fill known-bad chunks, runtime BAD discovery with raw confirmation, physical-order copy, resume by size+timestamp, same-disk guards, PARTIAL sidecars, copy-report), lost-files listing. Referenced from tools.py via `__DISKRESCUE__` token; bundled by sysdigger.spec (whole `tools source/` folder). Keep the file ASCII-only (PS 5.1 reads no-BOM .ps1 as ANSI). |
 | `config.py` | ~232 | Config dataclass (23 settings incl. 8 colorization thresholds) + JSON persistence |
 | `sensors.py` | ~115 | LibreHardwareMonitorLib wrapper |
 | `app.py` | ~109 | Entry point: QApplication, icon, AppUserModelID, theme, three-phase show, launch menu (Normal/Fast mode picker) |
@@ -543,3 +544,8 @@ On startup, `app.py:main()` shows a launch mode picker dialog (`launch_menu.py:s
 3. `sensors.py` checks `os.environ.get("SYSDIGGER_FAST_MODE")` at module level. If set, the entire pythonnet `try` block is skipped.
 4. `closeEvent` in `gui.py` already guards with `if lhm_proc is not None` — in fast mode `collector._lhm_process` stays `None`, so the PawnIO uninstall block is correctly skipped.
 5. `Collector.close()` (PDH query cleanup) is safe to call in fast mode — `_pdh_query` is only created when `_read_amd_per_core_freqs()` is called, which only runs in the LHM sensor path (not reached in fast mode). The `if self._pdh_query is not None` guard handles this.
+
+### 27. Disk Rescue tool (v4.19)
+Failing-disk recovery in the Hardware & Diagnostics category. Engine in `tools source/DiskRescueLib.ps1` (original proprietary code — do NOT port anything from the GPL-3.0 AdaptiveDisk project; the concept was analyzed but all code written from scratch). 5 modes in tools.py use tiny stub scripts that dot-source the lib via `. '__DISKRESCUE__'` and call `Show-DiskRescueDisks` / `Invoke-DiskRescueScan` / `Show-DiskRescueReport` / `Invoke-DiskRescueCopy` / `Show-DiskRescueLost`. The `rescue_copy` input type (gui.py `_collect_rescue_copy_input`) returns `__DRIVE__` (bare source letter), `__DEST__` and `__MAP__` (both `'`-escaped single-quoted PS strings). Map defaults to `Documents\DiskRescue\diskN-map.json`; scan input accepts `N` or `N|path` for a custom map location. Copy runs can take hours on real failing disks — Stop (taskkill tree) is safe: map checkpoints every 50 probes, per-file temp-write + timestamp preservation enables resume.
+
+**PowerShell collection-return pitfall (hit during v4.19, applies to any .ps1):** functions must NEVER return a collection (`return $list` unrolls it — empty List arrives as `$null`, single-item List arrives as the item). Also `@($someList)` misbehaves on pwsh 7.6 builds ("Argument types do not match" when assigned to a NoteProperty), and `Mandatory` parameters reject empty collections ("Cannot bind argument... empty collection"). DiskRescueLib patterns to copy: range helpers (`Add-DiskRescueRange`, `Populate-DiskRescueRangeList`) MUTATE a caller-created `List[object]` in place and return nothing; always count with `.Count` on the typed list, never `@($x).Count`.

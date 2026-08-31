@@ -4112,6 +4112,8 @@ class InfoWindow(QMainWindow):
             return self._collect_drive_input(spec)
         if kind == "hdd_check":
             return self._collect_hdd_check_input(spec)
+        if kind == "rescue_copy":
+            return self._collect_rescue_copy_input(spec)
         return {}
 
     def _collect_text_input(self, spec: dict) -> dict[str, str] | None:
@@ -4240,6 +4242,101 @@ class InfoWindow(QMainWindow):
                 mode_flag = modes[i][1]
                 break
         return {"__DRIVE__": letter, "__MODE__": mode_flag}
+
+    def _collect_rescue_copy_input(self, spec: dict) -> dict[str, str] | None:
+        """Disk Rescue 'Copy Files' dialog: source drive, destination folder
+        and an optional map file (disk number, .json path, or blank)."""
+        drives = self._drive_list()
+        if not drives:
+            QMessageBox.information(
+                self, "No Drives",
+                "No accessible drives were detected."
+            )
+            return None
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Disk Rescue - Copy Files")
+        dlg.setMinimumWidth(520)
+        v = QVBoxLayout(dlg)
+        v.setSpacing(10)
+        warn = QLabel(
+            "Copy from the FAILING disk to a folder on a DIFFERENT\n"
+            "healthy disk. Damaged regions are skipped and zero-filled."
+        )
+        warn.setWordWrap(True)
+        v.addWidget(warn)
+        v.addWidget(QLabel("1. Source drive (the failing disk's volume):"))
+        lw = QListWidget()
+        for _, label in drives:
+            lw.addItem(label)
+        if lw.count():
+            lw.setCurrentRow(0)
+        v.addWidget(lw)
+        v.addWidget(QLabel("2. Destination folder (on a different physical disk):"))
+        dest_row = QHBoxLayout()
+        dest_edit = QLineEdit()
+        dest_edit.setPlaceholderText(r"e.g. D:\Recovered")
+        dest_row.addWidget(dest_edit)
+        dest_btn = QPushButton("Browse...")
+        dest_row.addWidget(dest_btn)
+        v.addLayout(dest_row)
+
+        def _pick_dest():
+            path = QFileDialog.getExistingDirectory(
+                dlg, "Select destination folder", dest_edit.text() or ""
+            )
+            if path:
+                dest_edit.setText(path)
+        dest_btn.clicked.connect(_pick_dest)
+
+        v.addWidget(QLabel(
+            "3. Disk map (optional): disk number, map .json path, or blank:"
+        ))
+        map_row = QHBoxLayout()
+        map_edit = QLineEdit()
+        map_edit.setPlaceholderText(
+            r"e.g. 1  -  or leave blank to auto-find Documents\DiskRescue map"
+        )
+        map_row.addWidget(map_edit)
+        map_btn = QPushButton("Browse...")
+        map_row.addWidget(map_btn)
+        v.addLayout(map_row)
+
+        def _pick_map():
+            path, _ = QFileDialog.getOpenFileName(
+                dlg, "Select map file (optional)",
+                os.path.join(os.path.expanduser("~"), "Documents", "DiskRescue"),
+                "Disk Rescue maps (*.json);;All files (*.*)"
+            )
+            if path:
+                map_edit.setText(path)
+        map_btn.clicked.connect(_pick_map)
+
+        bb = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok
+            | QDialogButtonBox.StandardButton.Cancel
+        )
+        bb.accepted.connect(dlg.accept)
+        bb.rejected.connect(dlg.reject)
+        v.addWidget(bb)
+        lw.setFocus()
+        if dlg.exec() != QDialog.DialogCode.Accepted or lw.currentRow() < 0:
+            return None
+        letter = drives[lw.currentRow()][0]
+        dest = dest_edit.text().strip()
+        if not dest:
+            QMessageBox.warning(
+                self, "Input Required",
+                "Please choose a destination folder before proceeding."
+            )
+            return None
+        map_val = map_edit.text().strip()
+        # User-supplied strings are embedded in single-quoted PowerShell
+        # literals - escape ' -> '' (same rule as _collect_text_input).
+        return {
+            "__DRIVE__": letter,
+            "__DEST__": dest.replace("'", "''"),
+            "__MAP__": map_val.replace("'", "''"),
+        }
 
     # -- Page population ---------------------------------------------------- #
     def _populate_os(self) -> None:
@@ -6321,7 +6418,7 @@ class InfoWindow(QMainWindow):
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title)
 
-        ver = QLabel("Version 4.18")
+        ver = QLabel("Version 4.19")
         ver.setStyleSheet("font-size: 13px; font-weight: 600;")
         ver.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(ver)
@@ -6364,11 +6461,16 @@ class InfoWindow(QMainWindow):
             "  •  Diagnostics — event logs, BSOD history, crash dumps, restore "
             "points, environment variables, PATH entries, DirectX/D3D feature "
             "levels\n"
-            "  •  Tools — 28 integrated system utilities (flush DNS, disk "
+            "  •  Tools — 29 integrated system utilities (flush DNS, disk "
             "cleanup, SFC/DISM, HID services, MTP/Android USB repair, "
             "SATA/AHCI controller reset, disk status/online, memory "
             "diagnostic, hosts file editor, Windows Update trigger, UEFI "
             "BIOS reboot, etc.)\n"
+            "  •  Disk Rescue — recovers files from a failing disk: read-only "
+            "scan maps readable vs damaged regions with watchdog-protected "
+            "probes, then copies files off it skipping damaged areas "
+            "(zero-filled) instead of stalling forever; resumable maps, "
+            "per-file reports, and a lost-files list\n"
             "  •  Disk Analyzer — large file scan, top folders, recursive "
             "folder size map, duplicate file finder, and scan-then-pick "
             "cleanup of biggest AppData folders or user profile files (you "
