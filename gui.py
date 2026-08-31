@@ -34,6 +34,7 @@ from config import get_config, reload_config
 from paths import icon_path, icons_dir, lib_dir, data_dir
 from sensors import SENSOR_TYPE_ORDER, fmt_sensor_value
 from tools import CATEGORIES as TOOL_CATEGORIES, PREAMBLE as TOOL_PREAMBLE
+from tools import DISKRESCUE_DATA
 from tools import resolve_placeholders as resolve_tool_placeholders
 from updater import LibraryUpdater
 
@@ -4314,7 +4315,7 @@ class InfoWindow(QMainWindow):
         map_row = QHBoxLayout()
         map_edit = QLineEdit()
         map_edit.setPlaceholderText(
-            r"e.g. 1  -  or leave blank to auto-find Documents\DiskRescue map"
+            r"e.g. 1  -  or leave blank to auto-find the map in the app's DiskRescue folder"
         )
         map_row.addWidget(map_edit)
         map_btn = QPushButton("Browse...")
@@ -4324,7 +4325,7 @@ class InfoWindow(QMainWindow):
         def _pick_map():
             path, _ = QFileDialog.getOpenFileName(
                 dlg, "Select map file (optional)",
-                os.path.join(os.path.expanduser("~"), "Documents", "DiskRescue"),
+                DISKRESCUE_DATA,
                 "Disk Rescue maps (*.json);;All files (*.*)"
             )
             if path:
@@ -4377,10 +4378,10 @@ class InfoWindow(QMainWindow):
         disk_edit = QLineEdit()
         disk_edit.setPlaceholderText("e.g. 1")
         v.addWidget(disk_edit)
-        v.addWidget(QLabel("2. Map file (optional - default Documents\\DiskRescue\\diskN-map.json):"))
+        v.addWidget(QLabel("2. Map file (optional - default: the app's DiskRescue folder):"))
         map_row = QHBoxLayout()
         map_edit = QLineEdit()
-        map_edit.setPlaceholderText("blank = default location")
+        map_edit.setPlaceholderText(r"blank = default location (app root \DiskRescue)")
         map_row.addWidget(map_edit)
         map_btn = QPushButton("Browse...")
         map_row.addWidget(map_btn)
@@ -4389,7 +4390,7 @@ class InfoWindow(QMainWindow):
         def _pick_map():
             path, _ = QFileDialog.getSaveFileName(
                 dlg, "Select map file (optional)",
-                os.path.join(os.path.expanduser("~"), "Documents", "DiskRescue"),
+                DISKRESCUE_DATA,
                 "Disk Rescue maps (*.json);;All files (*.*)",
                 options=QFileDialog.Option.DontConfirmOverwrite
             )

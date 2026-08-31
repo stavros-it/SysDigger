@@ -21,6 +21,11 @@ $ErrorActionPreference = 'Stop'
 $script:MiB = [int64]1048576
 $script:GiB = [int64]1073741824
 
+# Default data folder for maps and copy reports. The GUI stubs override this
+# with the app's root DiskRescue folder (portable); direct lib use falls back
+# to Documents\DiskRescue.
+$script:DiskRescueDataDir = ''
+
 # ---------------------------------------------------------------------------
 # Native helpers (original C#, documented Win32 APIs only)
 # ---------------------------------------------------------------------------
@@ -669,7 +674,14 @@ function Format-DiskRescueDuration {
     return ('{0:00}:{1:00}:{2:00}' -f $ts.Hours, $ts.Minutes, $ts.Seconds)
 }
 
-function Get-DiskRescueDocumentsDir {
+function Get-DiskRescueDataDir {
+    # Default folder for maps + copy reports. The GUI overrides
+    # $script:DiskRescueDataDir with the app's root DiskRescue folder
+    # (portable - travels with the app); direct lib use falls back to
+    # Documents\DiskRescue.
+    if (-not [string]::IsNullOrWhiteSpace($script:DiskRescueDataDir)) {
+        return [string]$script:DiskRescueDataDir
+    }
     $docs = [Environment]::GetFolderPath('MyDocuments')
     if ([string]::IsNullOrWhiteSpace($docs)) { $docs = $env:USERPROFILE }
     return (Join-Path $docs 'DiskRescue')
@@ -677,12 +689,12 @@ function Get-DiskRescueDocumentsDir {
 
 function Get-DiskRescueMapPath {
     param([int]$DiskNumber)
-    return (Join-Path (Get-DiskRescueDocumentsDir) ('disk{0}-map.json' -f $DiskNumber))
+    return (Join-Path (Get-DiskRescueDataDir) ('disk{0}-map.json' -f $DiskNumber))
 }
 
 function Get-DiskRescueReportPath {
     param([int]$DiskNumber)
-    return (Join-Path (Get-DiskRescueDocumentsDir) ('disk{0}-copy-report.txt' -f $DiskNumber))
+    return (Join-Path (Get-DiskRescueDataDir) ('disk{0}-copy-report.txt' -f $DiskNumber))
 }
 
 # ---------------------------------------------------------------------------
@@ -1450,7 +1462,21 @@ function Invoke-DiskRescueCopy {
     # --- copy --------------------------------------------------------------
     $chunk = $ChunkMiB * $script:MiB
     $zeroChunk = New-Object byte[] $chunk
+    # Canonical report lives in the DiskRescue data folder (next to the map,
+    # so 'Show Lost Files' finds it by disk number); a convenience copy is
+    # placed next to the recovered files. Without a resolvable source disk
+    # number the report goes to the destination only.
     $reportPath = Join-Path $destRoot 'copy-report.txt'
+    $canonicalReport = ''
+    $srcDiskNum = Get-DiskRescuePartitionDisk -Letter $srcLetter
+    if ($srcDiskNum -ge 0) {
+        try {
+            $canonicalReport = Get-DiskRescueReportPath -DiskNumber $srcDiskNum
+            $cdir = Split-Path -Parent $canonicalReport
+            if (-not (Test-Path -LiteralPath $cdir)) { New-Item -ItemType Directory -Path $cdir -Force | Out-Null }
+            $reportPath = $canonicalReport
+        } catch { }
+    }
     $sw = [Diagnostics.Stopwatch]::StartNew()
     $lastPulse = $sw.Elapsed.TotalSeconds
     $doneBytes = [int64]0
@@ -1670,6 +1696,13 @@ function Invoke-DiskRescueCopy {
 
     if ($null -ne $session) { try { $session.Dispose() } catch { } }
     [System.IO.File]::WriteAllText($reportPath, $report.ToString(), [System.Text.Encoding]::UTF8)
+    $reportNote = ''
+    if ($canonicalReport -and (Test-Path -LiteralPath $reportPath)) {
+        try {
+            Copy-Item -LiteralPath $reportPath -Destination (Join-Path $destRoot 'copy-report.txt') -Force
+            $reportNote = ' (copy saved next to the recovered files)'
+        } catch { }
+    }
     if ($null -ne $mapData -and $newBadRanges -gt 0) {
         $mapData.BadRanges = $badRanges
         try { Save-DiskRescueMap -Map $mapData -Path $mapPathUsed } catch { }
@@ -1683,7 +1716,7 @@ function Invoke-DiskRescueCopy {
         $cntOk, $cntPartial, $cntLost, $cntSkip, $cntErr)
     Write-Output ('Recovered {0} | lost {1} | elapsed {2}.' -f `
         (Format-DiskRescueBytes $bytesRecovered), (Format-DiskRescueBytes $bytesLost), (Format-DiskRescueDuration $sw.Elapsed.TotalSeconds))
-    Write-Output ("Report: {0}" -f $reportPath)
+    Write-Output ("Report: {0}{1}" -f $reportPath, $reportNote)
     Write-Output "Use 'Show Lost Files' to list everything that did not fully recover."
 }
 

@@ -33,7 +33,7 @@ from __future__ import annotations
 
 import os
 
-from paths import resource_dir
+from paths import resource_dir, data_dir
 
 # Directory containing read-only bundled resources (the app root when
 # running as a script, sys._MEIPASS when frozen with PyInstaller).
@@ -44,6 +44,10 @@ LIB_PATH = os.path.join(_APP_DIR, "tools source", "SA_WinTools_Lib.ps1")
 
 # The Disk Rescue engine (failing-disk mapper + bad-aware copier).
 DISKRESCUE_PATH = os.path.join(_APP_DIR, "tools source", "DiskRescueLib.ps1")
+
+# Default Disk Rescue data folder (maps + copy reports). Portable: lives in
+# the app's root folder when writable, else %LOCALAPPDATA%\SysDigger.
+DISKRESCUE_DATA = os.path.join(data_dir(), "DiskRescue")
 
 # Where registry backups are written by the Install/Uninstall *Fix* mode.
 BACKUP_ROOT = os.path.join(_APP_DIR, "SA_WinTools_RegBackup")
@@ -1795,10 +1799,12 @@ Write-Output '============================================================'
 #  tools source/DiskRescueLib.ps1, referenced via __DISKRESCUE__)
 # ---------------------------------------------------------------------------
 _RESCUE_LIST = r""". '__DISKRESCUE__'
+$script:DiskRescueDataDir = '__DISKRESCUE_DATA__'
 Show-DiskRescueDisks
 """
 
 _RESCUE_SCAN = r""". '__DISKRESCUE__'
+$script:DiskRescueDataDir = '__DISKRESCUE_DATA__'
 $v = '__INPUT__'
 if ($v -match '^(\d+)\|(.+)$') {
     $diskNum = [int]$Matches[1]
@@ -1822,17 +1828,19 @@ try {
 """
 
 _RESCUE_REPORT = r""". '__DISKRESCUE__'
+$script:DiskRescueDataDir = '__DISKRESCUE_DATA__'
 $v = '__INPUT__'
 if ($v -match '^\d+$') { $p = Get-DiskRescueMapPath -DiskNumber ([int]$v) } else { $p = $v }
 if (-not (Test-Path -LiteralPath $p)) {
     Write-Output "[ERROR] Map not found: $p"
-    Write-Output "[HINT] Enter a disk number to use the default map location (Documents\DiskRescue\diskN-map.json), or the full path to an existing .json map."
+    Write-Output "[HINT] Enter a disk number to use the default map location (the app's DiskRescue folder), or the full path to an existing .json map."
     return
 }
 Show-DiskRescueReport -Map $p
 """
 
 _RESCUE_COPY = r""". '__DISKRESCUE__'
+$script:DiskRescueDataDir = '__DISKRESCUE_DATA__'
 $src = '__DRIVE__:'
 $dest = '__DEST__'
 $mv = '__MAP__'
@@ -1864,11 +1872,12 @@ try {
 """
 
 _RESCUE_LOST = r""". '__DISKRESCUE__'
+$script:DiskRescueDataDir = '__DISKRESCUE_DATA__'
 $v = '__INPUT__'
 if ($v -match '^\d+$') { $p = Get-DiskRescueReportPath -DiskNumber ([int]$v) } else { $p = $v }
 if (-not (Test-Path -LiteralPath $p)) {
     Write-Output "[ERROR] Copy report not found: $p"
-    Write-Output "[HINT] Run 'Copy Files (Bad-Aware)' first. Enter a disk number for the default report location (Documents\DiskRescue\diskN-copy-report.txt), or the full path to a report .txt."
+    Write-Output "[HINT] Run 'Copy Files (Bad-Aware)' first. Enter a disk number for the default report location (the app's DiskRescue folder), or the full path to a report .txt."
     return
 }
 Show-DiskRescueLost -Report $p
@@ -2062,7 +2071,7 @@ CATEGORIES: list[dict] = [
                         "input": {
                             "type": "text",
                             "label": "Disk number, or Browse to select a map .json file:",
-                            "placeholder": "e.g. 1  (uses Documents\\DiskRescue\\disk1-map.json)",
+                            "placeholder": "e.g. 1  (default: the app's DiskRescue folder \\disk1-map.json)",
                             "browse_filter": "Disk Rescue maps (*.json);;All files (*.*)",
                         },
                     },
@@ -2078,7 +2087,7 @@ CATEGORIES: list[dict] = [
                         "input": {
                             "type": "text",
                             "label": "Disk number, or Browse to select a copy-report .txt file:",
-                            "placeholder": "e.g. 1  (uses Documents\\DiskRescue\\disk1-copy-report.txt)",
+                            "placeholder": "e.g. 1  (default: the app's DiskRescue folder \\disk1-copy-report.txt)",
                             "browse_filter": "Copy reports (*.txt);;All files (*.*)",
                         },
                     },
@@ -2223,4 +2232,5 @@ def resolve_placeholders(script: str) -> str:
     return (script
             .replace("__LIB__", LIB_PATH)
             .replace("__DISKRESCUE__", DISKRESCUE_PATH)
+            .replace("__DISKRESCUE_DATA__", DISKRESCUE_DATA)
             .replace("__BACKUP__", BACKUP_ROOT))
