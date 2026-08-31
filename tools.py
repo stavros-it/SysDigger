@@ -1805,17 +1805,19 @@ if ($v -match '^(\d+)\|(.+)$') {
     $mapPath = $Matches[2]
 } elseif ($v -match '^\d+$') {
     $diskNum = [int]$v
-    $mapPath = Get-DiskRescueMapPath -DiskNumber $diskNum
+    $mapPath = '__MAP__'
 } else {
     Write-Output "[ERROR] '$v' is not a disk number. Run 'List Disks' first and enter the number of the FAILING disk."
-    Write-Output "[HINT] To store the map somewhere else (e.g. Documents is on the failing disk), use:  N|C:\path\map.json"
     return
 }
+if ([string]::IsNullOrWhiteSpace($mapPath)) {
+    $mapPath = Get-DiskRescueMapPath -DiskNumber $diskNum
+}
 try {
-    Invoke-DiskRescueScan -Disk $diskNum -Map $mapPath
+    Invoke-DiskRescueScan -Disk $diskNum -Map $mapPath -ProbeMiB __PROBEMIB__ -MinStepMiB __MINSTEP__ -TimeoutMs __TIMEOUTMS__
 } catch {
     Write-Output ("[ERROR] " + $_.Exception.Message)
-    Write-Output "[HINT] The map must be saved on a DIFFERENT physical disk than the one being scanned - retry with:  N|D:\somewhere\map.json"
+    Write-Output "[HINT] The map must be saved on a DIFFERENT physical disk than the one being scanned - retry with a custom map location on another disk."
 }
 """
 
@@ -2052,19 +2054,16 @@ CATEGORIES: list[dict] = [
                     {
                         "label": "Scan Disk (Build Map)...",
                         "script": _RESCUE_SCAN,
-                        "input": {
-                            "type": "text",
-                            "label": "Enter the disk number of the FAILING disk to scan:",
-                            "placeholder": "e.g. 1  -  or  1|D:\\maps\\disk1.json  for a custom map location",
-                        },
+                        "input": {"type": "rescue_scan"},
                     },
                     {
                         "label": "Show Map Report...",
                         "script": _RESCUE_REPORT,
                         "input": {
                             "type": "text",
-                            "label": "Disk number or full path to a map .json:",
+                            "label": "Disk number, or Browse to select a map .json file:",
                             "placeholder": "e.g. 1  (uses Documents\\DiskRescue\\disk1-map.json)",
+                            "browse_filter": "Disk Rescue maps (*.json);;All files (*.*)",
                         },
                     },
                     {
@@ -2078,8 +2077,9 @@ CATEGORIES: list[dict] = [
                         "script": _RESCUE_LOST,
                         "input": {
                             "type": "text",
-                            "label": "Disk number or full path to a copy-report .txt:",
+                            "label": "Disk number, or Browse to select a copy-report .txt file:",
                             "placeholder": "e.g. 1  (uses Documents\\DiskRescue\\disk1-copy-report.txt)",
+                            "browse_filter": "Copy reports (*.txt);;All files (*.*)",
                         },
                     },
                 ],

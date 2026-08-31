@@ -4114,6 +4114,8 @@ class InfoWindow(QMainWindow):
             return self._collect_hdd_check_input(spec)
         if kind == "rescue_copy":
             return self._collect_rescue_copy_input(spec)
+        if kind == "rescue_scan":
+            return self._collect_rescue_scan_input(spec)
         return {}
 
     def _collect_text_input(self, spec: dict) -> dict[str, str] | None:
@@ -4127,7 +4129,25 @@ class InfoWindow(QMainWindow):
         le.setPlaceholderText(spec.get("placeholder", ""))
         if spec.get("maxlen"):
             le.setMaxLength(spec["maxlen"])
-        v.addWidget(le)
+        # Optional file-explorer Browse button (spec: "browse_filter" is a
+        # QFileDialog filter, e.g. picking a map .json or report .txt).
+        browse_filter = spec.get("browse_filter", "")
+        if browse_filter:
+            row = QHBoxLayout()
+            row.addWidget(le)
+            browse_btn = QPushButton("Browse...")
+            row.addWidget(browse_btn)
+            v.addLayout(row)
+
+            def _pick_file():
+                path, _ = QFileDialog.getOpenFileName(
+                    dlg, "Select file", "", browse_filter
+                )
+                if path:
+                    le.setText(path)
+            browse_btn.clicked.connect(_pick_file)
+        else:
+            v.addWidget(le)
         bb = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok
             | QDialogButtonBox.StandardButton.Cancel
@@ -4336,6 +4356,94 @@ class InfoWindow(QMainWindow):
             "__DRIVE__": letter,
             "__DEST__": dest.replace("'", "''"),
             "__MAP__": map_val.replace("'", "''"),
+        }
+
+    def _collect_rescue_scan_input(self, spec: dict) -> dict[str, str] | None:
+        """Disk Rescue 'Scan Disk' dialog: disk number, optional map path and
+        the scan step numbers (probe sample size, refine floor, timeout)."""
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Disk Rescue - Scan Disk")
+        dlg.setMinimumWidth(540)
+        v = QVBoxLayout(dlg)
+        v.setSpacing(10)
+        warn = QLabel(
+            "Builds a GOOD/BAD map of a physical disk with read-only\n"
+            "watchdog-protected probes. Resumes an interrupted scan.\n"
+            "The map is saved outside the scanned disk."
+        )
+        warn.setWordWrap(True)
+        v.addWidget(warn)
+        v.addWidget(QLabel("1. Disk number to scan (see 'List Disks'):"))
+        disk_edit = QLineEdit()
+        disk_edit.setPlaceholderText("e.g. 1")
+        v.addWidget(disk_edit)
+        v.addWidget(QLabel("2. Map file (optional - default Documents\\DiskRescue\\diskN-map.json):"))
+        map_row = QHBoxLayout()
+        map_edit = QLineEdit()
+        map_edit.setPlaceholderText("blank = default location")
+        map_row.addWidget(map_edit)
+        map_btn = QPushButton("Browse...")
+        map_row.addWidget(map_btn)
+        v.addLayout(map_row)
+
+        def _pick_map():
+            path, _ = QFileDialog.getSaveFileName(
+                dlg, "Select map file (optional)",
+                os.path.join(os.path.expanduser("~"), "Documents", "DiskRescue"),
+                "Disk Rescue maps (*.json);;All files (*.*)",
+                options=QFileDialog.Option.DontConfirmOverwrite
+            )
+            if path:
+                map_edit.setText(path)
+        map_btn.clicked.connect(_pick_map)
+
+        v.addWidget(QLabel("3. Scan step numbers:"))
+        grid = QGridLayout()
+        grid.addWidget(QLabel("Probe sample size (MiB):"), 0, 0)
+        probe_spin = QSpinBox()
+        probe_spin.setRange(1, 64)
+        probe_spin.setValue(1)
+        probe_spin.setToolTip("Bytes read per probe. Larger = faster scan, coarser map.")
+        grid.addWidget(probe_spin, 0, 1)
+        grid.addWidget(QLabel("Refine floor (MiB):"), 1, 0)
+        floor_spin = QSpinBox()
+        floor_spin.setRange(1, 1024)
+        floor_spin.setValue(8)
+        floor_spin.setToolTip("How fine the scan refines BAD region boundaries (8 MiB = balanced, 1 MiB = very deep).")
+        grid.addWidget(floor_spin, 1, 1)
+        grid.addWidget(QLabel("Probe timeout (ms):"), 2, 0)
+        timeout_spin = QSpinBox()
+        timeout_spin.setRange(500, 60000)
+        timeout_spin.setSingleStep(500)
+        timeout_spin.setValue(5000)
+        timeout_spin.setToolTip("Give up a probe after this long. Raise it (10-20s) for very slow or USB disks.")
+        grid.addWidget(timeout_spin, 2, 1)
+        v.addLayout(grid)
+
+        bb = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok
+            | QDialogButtonBox.StandardButton.Cancel
+        )
+        bb.accepted.connect(dlg.accept)
+        bb.rejected.connect(dlg.reject)
+        v.addWidget(bb)
+        disk_edit.setFocus()
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return None
+        disk_txt = disk_edit.text().strip()
+        if not disk_txt.isdigit():
+            QMessageBox.warning(
+                self, "Input Required",
+                "Please enter a valid disk number (digits only)."
+            )
+            return None
+        map_val = map_edit.text().strip()
+        return {
+            "__INPUT__": disk_txt,
+            "__MAP__": map_val.replace("'", "''"),
+            "__PROBEMIB__": str(probe_spin.value()),
+            "__MINSTEP__": str(floor_spin.value()),
+            "__TIMEOUTMS__": str(timeout_spin.value()),
         }
 
     # -- Page population ---------------------------------------------------- #
@@ -6468,7 +6576,8 @@ class InfoWindow(QMainWindow):
             "BIOS reboot, etc.)\n"
             "  •  Disk Rescue — recovers files from a failing disk: read-only "
             "scan maps readable vs damaged regions with watchdog-protected "
-            "probes, then copies files off it skipping damaged areas "
+            "probes (adjustable step numbers: probe size, refine floor, "
+            "timeout), then copies files off it skipping damaged areas "
             "(zero-filled) instead of stalling forever; resumable maps, "
             "per-file reports, and a lost-files list\n"
             "  •  Disk Analyzer — large file scan, top folders, recursive "

@@ -709,6 +709,8 @@ function New-DiskRescueMap {
         ProbeCount     = 0
         TimeoutMs      = 5000
         CancelWaitMs   = 2000
+        ProbeMiB       = 1
+        MinStepMiB     = 8
         BadRanges      = @()   # array of @{ s = int64; e = int64 } (exclusive end)
         GoodRanges     = @()
     }
@@ -934,9 +936,12 @@ function Invoke-DiskRescueScan {
         [switch]$Restart,
         [int]$TimeoutMs = 5000,
         [int]$CancelWaitMs = 2000,
-        [int64]$MinStepBytes = 8MB,
+        [ValidateRange(1, 64)][int]$ProbeMiB = 1,
+        [ValidateRange(1, 1024)][int]$MinStepMiB = 8,
+        [int64]$MinStepBytes = 0,
         [int]$ProbeLimit = 0
     )
+    if ($MinStepBytes -le 0) { $MinStepBytes = [int64]$MinStepMiB * $script:MiB }
     if (-not (Test-DiskRescueAdmin)) {
         throw 'Administrator privileges are required for raw disk access.'
     }
@@ -986,6 +991,8 @@ function Invoke-DiskRescueScan {
         $mapData.TimeoutMs = $TimeoutMs
         $mapData.CancelWaitMs = $CancelWaitMs
     }
+    $mapData.ProbeMiB = $ProbeMiB
+    $mapData.MinStepMiB = $MinStepMiB
     $bps = [int]$mapData.BytesPerSector
     $diskSize = [int64]$mapData.DiskSizeBytes
     $badRanges = New-Object System.Collections.Generic.List[object]
@@ -1004,10 +1011,11 @@ function Invoke-DiskRescueScan {
     if ($MinStepBytes -lt $bps) { $MinStepBytes = $bps }
     $MinStepBytes = [int64]([Math]::Floor($MinStepBytes / $bps) * $bps)
     if ($MinStepBytes -lt $bps) { $MinStepBytes = $bps }
-    $probeLen = 1 * $script:MiB   # 1 MiB aligned probe read
+    $probeLen = [int64]$ProbeMiB * $script:MiB   # per-probe sample read (sector-aligned: MiB multiples)
 
-    Write-Output ('Probe plan: coarse step {0}, refine floor {1}, read {2} per probe, timeout {3} ms.' -f `
-        (Format-DiskRescueBytes $coarse), (Format-DiskRescueBytes ([int64]$MinStepBytes)), (Format-DiskRescueBytes $probeLen), $TimeoutMs)
+    [double]$samplePct = 100.0 * $probeLen / [Math]::Max(1, $coarse)
+    Write-Output ('Probe plan: coarse step {0}, refine floor {1} MiB, sample {2} MiB ({3:N2}% first-pass coverage), timeout {4} ms.' -f `
+        (Format-DiskRescueBytes $coarse), $MinStepMiB, $ProbeMiB, $samplePct, $TimeoutMs)
     Write-Output ''
 
     $session = New-Object DiskRescueNative.RawDiskSession($Disk)
@@ -1030,6 +1038,26 @@ function Invoke-DiskRescueScan {
         Save-DiskRescueMap -Map $mapData -Path $mapFull
     }
 
+    function Invoke-DiskRescueProbeVerified {
+        # Probe with one verification retry: a single timeout on an otherwise
+        # responsive drive (e.g. a cold cache hiccup) must not mark a region
+        # BAD. Waits for the known-good anchor between attempts. The read is
+        # clamped to the disk end - probing the last <1 MiB with a full-size
+        # read would fail with error 87 and never mean damage.
+        param(
+            [int64]$Offset,
+            [int64]$Anchor
+        )
+        [int64]$len = [Math]::Min([int64]$probeLen, $diskSize - $Offset)
+        if ($len -lt $bps) { $len = $bps }
+        $r = $session.ReadAt($Offset, [int]$len, $TimeoutMs, $CancelWaitMs)
+        if ($r.Status -eq 'Good') { return $r }
+        if (-not (Wait-DiskRescueDriveReady -Session $session -AnchorOffset $Anchor -TimeoutMs $TimeoutMs -CancelWaitMs $CancelWaitMs)) {
+            return $r
+        }
+        return $session.ReadAt($Offset, [int]$len, $TimeoutMs, $CancelWaitMs)
+    }
+
     try {
         # Level-by-level hierarchical scan. Each level halves the step; probes
         # are only issued for locations that are still unknown (i.e. not
@@ -1042,6 +1070,13 @@ function Invoke-DiskRescueScan {
 
         while ($step -ge $MinStepBytes -and -not $abort) {
             $depth++
+            # Re-align the step to the sector size: halving an aligned step
+            # can produce a non-multiple of the sector size (e.g. 512 x odd),
+            # and NO_BUFFERING reads reject misaligned offsets with error 87
+            # ("The parameter is incorrect") - which must never be mistaken
+            # for a BAD region.
+            $step = [int64]([Math]::Floor($step / $bps) * $bps)
+            if ($step -lt $bps) { $step = $bps }
             $offsets = New-Object System.Collections.Generic.List[int64]
             for ([int64]$o = 0; $o -lt $diskSize; $o += $step) {
                 if (Test-DiskRescueOverlap -Ranges $badRanges -S $o -E ($o + $step)) { continue }
@@ -1060,20 +1095,20 @@ function Invoke-DiskRescueScan {
             while ($i -lt $offsets.Count) {
                 $o = [int64]$offsets[$i]
                 if ($probesDone -ge $maxProbes) { $abort = $true; break }
-                $res = Invoke-DiskRescueProbe -Session $session -Offset $o -Length $probeLen -TimeoutMs $TimeoutMs -CancelWaitMs $CancelWaitMs
+                $res = Invoke-DiskRescueProbeVerified -Offset $o -Anchor $anchor
                 $probesDone++
                 $sinceSave++
 
                 if ($res.Status -eq 'Good') {
                     $probesGood++
-                    Add-DiskRescueRange -Ranges $goodRanges -S $o -E ($o + $probeLen)
+                    Add-DiskRescueRange -Ranges $goodRanges -S $o -E ([Math]::Min($diskSize, $o + $probeLen))
                     $anchor = [int64]$o
                 } else {
                     $probesBad++
                     Write-Output ("[BAD ] {0} - {1}" -f (Format-DiskRescueBytes $o), $res.Message)
                     # Mark the probe span bad, then jump forward to find the edge
                     # of the damaged region using exponential steps.
-                    Add-DiskRescueRange -Ranges $badRanges -S $o -E ($o + $probeLen)
+                    Add-DiskRescueRange -Ranges $badRanges -S $o -E ([Math]::Min($diskSize, $o + $probeLen))
                     if (-not (Wait-DiskRescueDriveReady -Session $session -AnchorOffset $anchor -TimeoutMs $TimeoutMs -CancelWaitMs $CancelWaitMs)) {
                         $abort = $true
                         break
@@ -1082,16 +1117,17 @@ function Invoke-DiskRescueScan {
                     [int64]$edge = -1
                     while ($true) {
                         $t = $o + $jump
+                        $t = [int64]([Math]::Floor($t / $bps) * $bps)
                         if ($t -ge $diskSize) { $edge = $diskSize; break }
-                        $res2 = Invoke-DiskRescueProbe -Session $session -Offset $t -Length $probeLen -TimeoutMs $TimeoutMs -CancelWaitMs $CancelWaitMs
+                        $res2 = Invoke-DiskRescueProbeVerified -Offset $t -Anchor $anchor
                         $probesDone++
                         if ($res2.Status -eq 'Good') {
                             $edge = $t
-                            Add-DiskRescueRange -Ranges $goodRanges -S $t -E ($t + $probeLen)
+                            Add-DiskRescueRange -Ranges $goodRanges -S $t -E ([Math]::Min($diskSize, $t + $probeLen))
                             $anchor = [int64]$t
                             break
                         }
-                        Add-DiskRescueRange -Ranges $badRanges -S $t -E ($t + $probeLen)
+                        Add-DiskRescueRange -Ranges $badRanges -S $t -E ([Math]::Min($diskSize, $t + $probeLen))
                         Write-Output ("[BAD ] {0} (edge search) - {1}" -f (Format-DiskRescueBytes $t), $res2.Message)
                         if (-not (Wait-DiskRescueDriveReady -Session $session -AnchorOffset $anchor -TimeoutMs $TimeoutMs -CancelWaitMs $CancelWaitMs)) {
                             $abort = $true
@@ -1102,19 +1138,19 @@ function Invoke-DiskRescueScan {
                     if ($abort) { break }
                     # Refine the boundary between the last BAD probe and the
                     # GOOD edge by bisection down to MinStepBytes.
-                    [int64]$badEdge = $o + $probeLen
+                    [int64]$badEdge = [Math]::Min($diskSize, $o + $probeLen)
                     [int64]$goodEdge = $edge
                     while (($goodEdge - $badEdge) -gt $MinStepBytes) {
                         [int64]$mid = $badEdge + [int64](($goodEdge - $badEdge) / 2)
                         $mid = [int64]([Math]::Floor($mid / $bps) * $bps)
-                        $resm = Invoke-DiskRescueProbe -Session $session -Offset $mid -Length $probeLen -TimeoutMs $TimeoutMs -CancelWaitMs $CancelWaitMs
+                        $resm = Invoke-DiskRescueProbeVerified -Offset $mid -Anchor $anchor
                         $probesDone++
                         if ($resm.Status -eq 'Good') {
                             $goodEdge = $mid
-                            Add-DiskRescueRange -Ranges $goodRanges -S $mid -E ($mid + $probeLen)
+                            Add-DiskRescueRange -Ranges $goodRanges -S $mid -E ([Math]::Min($diskSize, $mid + $probeLen))
                             $anchor = [int64]$mid
                         } else {
-                            $badEdge = $mid + $probeLen
+                            $badEdge = [Math]::Min($diskSize, $mid + $probeLen)
                             Add-DiskRescueRange -Ranges $badRanges -S $mid -E ($mid + $probeLen)
                             Write-Output ("[BAD ] {0} (refine) - {1}" -f (Format-DiskRescueBytes $mid), $resm.Message)
                             if (-not (Wait-DiskRescueDriveReady -Session $session -AnchorOffset $anchor -TimeoutMs $TimeoutMs -CancelWaitMs $CancelWaitMs)) {
@@ -1198,6 +1234,8 @@ function Show-DiskRescueReport {
     Write-Output ('BAD       : {0} in {1} range(s)' -f (Format-DiskRescueBytes $badTotal), $badRanges.Count)
     Write-Output ('GOOD      : {0} in {1} range(s)' -f (Format-DiskRescueBytes $goodTotal), $goodRanges.Count)
     Write-Output ('Unmapped  : {0}' -f (Format-DiskRescueBytes ([int64]($diskSize - $badTotal - $goodTotal))))
+    [double]$sampledPct = 100.0 * [double]($goodTotal + $badTotal) / [Math]::Max(1, [double]$diskSize)
+    Write-Output ('Sampled   : {0:N1}% of the disk was actually read (GOOD-first sampling - unprobed area is not a problem, just not read).' -f $sampledPct)
     Write-Output ''
     if ($badRanges.Count -gt 0) {
         Write-Output 'BAD ranges (first 40):'
@@ -1232,20 +1270,20 @@ function Show-DiskRescueReport {
             $ov = [Math]::Min($re, $ce) - [Math]::Max($rs, $cs)
             $goodFrac += [Math]::Max(0.0, [double]$ov / [double]($ce - $cs))
         }
-        if ($badFrac -ge 0.5) { [void]$sb.Append('X') }
-        elseif ($goodFrac -ge 0.5) { [void]$sb.Append('.') }
+        if ($badFrac -gt 0) { [void]$sb.Append('X') }
+        elseif ($goodFrac -gt 0) { [void]$sb.Append('.') }
         else { [void]$sb.Append('?') }
     }
     Write-Output ('Disk map ({0} cells):' -f $width)
     Write-Output $sb.ToString()
-    Write-Output '  . = GOOD   X = BAD   ? = unknown'
+    Write-Output '  . = readable samples found   X = BAD found   ? = never sampled'
     Write-Output ''
     if (-not $mapData.Completed) {
         Write-Output "Recommended: re-run 'Scan Disk (Build Map)' to finish mapping (it resumes)."
     } elseif ($badTotal -gt 0) {
         Write-Output "Recommended: run 'Copy Files (Bad-Aware)' - readable files are copied fast, damaged regions are skipped and zero-filled."
     } else {
-        Write-Output "Recommended: no BAD ranges found - a straight copy may be sufficient, but 'Copy Files (Bad-Aware)' still protects against undiscovered damage."
+        Write-Output "Recommended: no BAD ranges found in the sampled areas - a straight copy may be sufficient, but 'Copy Files (Bad-Aware)' still protects against undiscovered damage."
     }
 }
 
