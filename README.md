@@ -11,7 +11,7 @@
 
 Windows system information and diagnostics viewer with a Fluent-style GUI. SysDigger
 surfaces everything from CPU/GPU sensors and live network connections to BSOD history
-and 28 integrated maintenance tools — all in a single dark-themed PySide6 window with
+and 29 integrated maintenance tools — all in a single dark-themed PySide6 window with
 live search, copy-to-clipboard, and JSON/Text/HTML export.
 
 <p align="center">
@@ -30,6 +30,25 @@ live search, copy-to-clipboard, and JSON/Text/HTML export.
 - **Health** — Windows Defender, activation, battery wear, restore points
 - **Diagnostics** — event logs, BSOD history, crash dumps, DirectX/D3D feature levels, environment variables, PATH entries
 - **Tools** — 29 integrated maintenance utilities (disk cleanup, SFC/DISM, disk analyzer with scan-then-pick cleanup, Appx manager, dev cache cleaner, hibernate manager, hosts editor, memory diagnostic, Windows Update trigger, UEFI BIOS reboot, Autopilot hash export, MTP/Android USB repair, SATA/AHCI controller reset, disk status/online, disk rescue for failing disks, and more)
+
+### Disk Rescue — recover files from a failing disk
+
+A dedicated recovery tool for hard drives that are starting to fail, where a normal
+copy stalls for hours retrying a handful of unreadable sectors:
+
+- **Read-only scan** — maps the physical disk with watchdog-protected raw probes
+  (each probe is cancelled after a timeout instead of hanging forever), refining
+  around damaged regions with adjustable step numbers (probe size, refine floor,
+  timeout). Builds a resumable GOOD/BAD map with checkpoints — stopping mid-scan
+  is safe.
+- **Bad-aware copy** — copies every file off the disk, skipping known-damaged
+  regions (zero-filled) and reading everything else through the same watchdog, so
+  one bad sector can no longer freeze the whole recovery. Files are ordered by
+  physical location to minimise head movement on mechanical drives.
+- **Reports** — ASCII disk map, per-file copy report, and a lost-files list;
+  damage discovered during copying is written back to the map.
+- **Safety guards** — refuses to write the map or copy to the same physical disk
+  it is rescuing from; the scan never writes to the source disk at all.
 
 ## Requirements
 
@@ -93,6 +112,7 @@ See [BUILD_GUIDE.md](BUILD_GUIDE.md) for detailed build and code signing instruc
 | `sensors.py` | LibreHardwareMonitorLib .NET assembly loading (skipped in Fast Mode) |
 | `lhm_process.py` | Portable PawnIO installer (kernel driver for motherboard sensors) |
 | `tools.py` | 29 maintenance tools (4 categories, 67 PowerShell modes) |
+| `tools source/DiskRescueLib.ps1` | Disk Rescue engine — original failing-disk mapper + bad-aware copier (see Acknowledgements) |
 | `config.py` | Config dataclass + JSON persistence |
 | `paths.py` | Portable path resolution for frozen exe |
 | `helpers.py` | Formatting utilities (bytes, speed, uptime) |
@@ -128,6 +148,16 @@ SysDigger bundles or uses the following third-party components:
 - Python packages: [PySide6](https://www.qt.io) (LGPL-3.0+), [psutil](https://github.com/giampaolo/psutil) (BSD-3-Clause), [requests](https://github.com/psf/requests) (Apache-2.0), [pythonnet](https://github.com/pythonnet/pythonnet) (MIT), [wmi](https://github.com/tjguk/wmi) (MIT), [pywin32](https://github.com/mhammond/pywin32) (MIT-0)
 
 Full license texts and attribution notices: see [THIRD-PARTY-NOTICES](THIRD-PARTY-NOTICES).
+
+## Acknowledgements
+
+- The **Disk Rescue** engine (`tools source/DiskRescueLib.ps1`) was inspired by the
+  [AdaptiveDisk](https://github.com/orloxgr/AdaptiveDisk) project's GOOD-first
+  recovery approach — map readable regions first, skip damaged areas instead of
+  fighting them, and learn from failures during real copying. The engine itself is
+  **an original proprietary implementation** (© Stavros Antoniou): all C# and
+  PowerShell code was written from scratch for SysDigger and contains no code from
+  AdaptiveDisk, which is GPL-3.0 licensed. Only the concept was taken as inspiration.
 
 ## License
 
