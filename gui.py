@@ -6527,7 +6527,7 @@ class InfoWindow(QMainWindow):
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title)
 
-        ver = QLabel("Version 4.19")
+        ver = QLabel("Version 4.20")
         ver.setStyleSheet("font-size: 13px; font-weight: 600;")
         ver.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(ver)
@@ -6570,7 +6570,7 @@ class InfoWindow(QMainWindow):
             "  •  Diagnostics — event logs, BSOD history, crash dumps, restore "
             "points, environment variables, PATH entries, DirectX/D3D feature "
             "levels\n"
-            "  •  Tools — 29 integrated system utilities (flush DNS, disk "
+            "  •  Tools — 30 integrated system utilities (flush DNS, disk "
             "cleanup, SFC/DISM, HID services, MTP/Android USB repair, "
             "SATA/AHCI controller reset, disk status/online, memory "
             "diagnostic, hosts file editor, Windows Update trigger, UEFI "
@@ -6586,6 +6586,11 @@ class InfoWindow(QMainWindow):
             "cleanup of biggest AppData folders or user profile files (you "
             "choose what to delete)\n"
             "  •  Appx Manager — uninstall largest Appx packages by size\n"
+            "  •  Installer Cleanup — find orphaned .msi/.msp files in "
+            "C:\\Windows\\Installer (no longer referenced by any installed "
+            "program or patch) and move them to a quarantine folder to "
+            "reclaim space; a manifest records original locations and the "
+            "quarantine can be purged once nothing breaks\n"
             "  •  Dev Cache Cleaner — clear npm / pip caches and leftover "
             "updater folders (LM Studio, Vortex, RSI Launcher, uv) and "
             "app data folders (jcode)\n"

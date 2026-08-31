@@ -11,7 +11,7 @@
 
 Windows system information and diagnostics viewer with a Fluent-style GUI. SysDigger
 surfaces everything from CPU/GPU sensors and live network connections to BSOD history
-and 29 integrated maintenance tools — all in a single dark-themed PySide6 window with
+and 30 integrated maintenance tools — all in a single dark-themed PySide6 window with
 live search, copy-to-clipboard, and JSON/Text/HTML export.
 
 <p align="center">
@@ -29,7 +29,7 @@ live search, copy-to-clipboard, and JSON/Text/HTML export.
 - **Devices** — USB, Bluetooth, printers, audio devices
 - **Health** — Windows Defender, activation, battery wear, restore points
 - **Diagnostics** — event logs, BSOD history, crash dumps, DirectX/D3D feature levels, environment variables, PATH entries
-- **Tools** — 29 integrated maintenance utilities (disk cleanup, SFC/DISM, disk analyzer with scan-then-pick cleanup, Appx manager, dev cache cleaner, hibernate manager, hosts editor, memory diagnostic, Windows Update trigger, UEFI BIOS reboot, Autopilot hash export, MTP/Android USB repair, SATA/AHCI controller reset, disk status/online, disk rescue for failing disks, and more)
+- **Tools** — 30 integrated maintenance utilities (disk cleanup, SFC/DISM, disk analyzer with scan-then-pick cleanup, Appx manager, orphaned installer cleanup, dev cache cleaner, hibernate manager, hosts editor, memory diagnostic, Windows Update trigger, UEFI BIOS reboot, Autopilot hash export, MTP/Android USB repair, SATA/AHCI controller reset, disk status/online, disk rescue for failing disks, and more)
 
 ### Disk Rescue — recover files from a failing disk
 
@@ -111,7 +111,7 @@ See [BUILD_GUIDE.md](BUILD_GUIDE.md) for detailed build and code signing instruc
 | `collectors.py` | All data collection (OS, HW, net, SW, health, diagnostics, processes) |
 | `sensors.py` | LibreHardwareMonitorLib .NET assembly loading (skipped in Fast Mode) |
 | `lhm_process.py` | Portable PawnIO installer (kernel driver for motherboard sensors) |
-| `tools.py` | 29 maintenance tools (4 categories, 68 PowerShell modes) |
+| `tools.py` | 30 maintenance tools (4 categories, 70 PowerShell modes) |
 | `tools source/DiskRescueLib.ps1` | Disk Rescue engine — original failing-disk mapper + bad-aware copier (see Acknowledgements) |
 | `config.py` | Config dataclass + JSON persistence |
 | `paths.py` | Portable path resolution for frozen exe |

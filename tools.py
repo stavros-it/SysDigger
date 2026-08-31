@@ -27,6 +27,7 @@ Substitution tokens (replaced by the GUI before running):
   ``__INPUT__``    - free-form text input (product key / Wi-Fi profile)
   ``__PATHS__``    - newline-separated paths / package FullNames chosen by
                      the user in a ``path_select`` mode's pick dialog
+  ``__QUAR__``     - installer quarantine folder (orphaned .msi/.msp)
 """
 
 from __future__ import annotations
@@ -51,6 +52,11 @@ DISKRESCUE_DATA = os.path.join(data_dir(), "DiskRescue")
 
 # Where registry backups are written by the Install/Uninstall *Fix* mode.
 BACKUP_ROOT = os.path.join(_APP_DIR, "SA_WinTools_RegBackup")
+
+# Quarantine folder for orphaned Windows Installer files (.msi/.msp).
+# Files are MOVED here (never deleted) so a false positive is recoverable;
+# the manifest.log inside documents each file's original location.
+INSTALLER_QUARANTINE = os.path.join(data_dir(), "InstallerQuarantine")
 
 
 # ---------------------------------------------------------------------------
@@ -1558,6 +1564,241 @@ Write-Output '[SUCCESS] Path deletion completed.'
 Write-Output '============================================================'
 """
 
+# ---------------------------------------------------------------------------
+#  Installer Cleanup - orphaned .msi/.msp files in C:\Windows\Installer
+#  (scan emits __SCAN_BEGIN__/__SCAN_END__ with `size_bytes\tpath` rows;
+#  the mover moves picked files to the quarantine folder + manifest)
+# ---------------------------------------------------------------------------
+_SCAN_ORPHAN_MSI = r"""Write-Output '============================================================'
+Write-Output ' SA WinTools - Orphaned Installer File Scan'
+Write-Output '============================================================'
+Write-Output ''
+Write-Output '[*] Building the keep-set of installer files still referenced...'
+$keep = @{}
+function Add-KeepName([string]$localPackage) {
+    if ($localPackage) {
+        $leaf = [System.IO.Path]::GetFileName($localPackage)
+        if ($leaf) { $keep[$leaf.ToLowerInvariant()] = $true }
+    }
+}
+$comOk = $false
+try {
+    $wi = New-Object -ComObject WindowsInstaller.Installer
+    foreach ($prod in $wi.Products()) {
+        try {
+            if ($wi.ProductState($prod) -eq 5) {
+                Add-KeepName $wi.ProductInfo($prod, 'LocalPackage')
+            }
+        } catch {}
+    }
+    $comOk = $true
+} catch {
+    Write-Output '[!] Windows Installer COM unavailable - registry sweep only.'
+}
+$udRoot = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Installer\UserData'
+$patchRefs = 0
+$prodRefs = 0
+Get-ChildItem -Path "$udRoot\*\Patches" -EA SilentlyContinue | ForEach-Object {
+    $lp = (Get-ItemProperty -Path $_.PSPath -EA SilentlyContinue).LocalPackage
+    if ($lp) { Add-KeepName $lp; $patchRefs++ }
+}
+Get-ChildItem -Path "$udRoot\*\Products\*\InstallProperties" -EA SilentlyContinue | ForEach-Object {
+    $lp = (Get-ItemProperty -Path $_.PSPath -EA SilentlyContinue).LocalPackage
+    if ($lp) { Add-KeepName $lp; $prodRefs++ }
+}
+Write-Output "[*] Keep-set: $($keep.Count) unique file name(s) (COM: $comOk, patch refs: $patchRefs, product refs: $prodRefs)"
+Write-Output ''
+$insDir = Join-Path $env:SystemRoot 'Installer'
+if (-not (Test-Path -LiteralPath $insDir)) {
+    Write-Output "[ERROR] $insDir not found on this system."
+    Write-Output '============================================================'
+    return
+}
+Write-Output "[*] Scanning $insDir for .msi / .msp files (recursive)..."
+$msiFiles = New-Object 'System.Collections.Generic.List[object]'
+foreach ($f in (Get-ChildItem -LiteralPath $insDir -Recurse -File -Force -EA SilentlyContinue)) {
+    $ext = $f.Extension.ToLowerInvariant()
+    if ($ext -eq '.msi' -or $ext -eq '.msp') { $msiFiles.Add($f) }
+}
+$total = $msiFiles.Count
+Write-Output "[*] Found $total installer file(s). Checking references..."
+Write-Output ''
+$orphans = New-Object 'System.Collections.Generic.List[object]'
+[long]$usedBytes = [long]0
+[long]$orphanBytes = [long]0
+$usedCount = 0
+$idx = 0
+foreach ($f in $msiFiles) {
+    $idx++
+    if (($idx % 250) -eq 0) { Write-Output "[*] Checked $idx of $total file(s)..." }
+    if ($keep.ContainsKey($f.Name.ToLowerInvariant())) {
+        $usedCount++
+        $usedBytes += $f.Length
+    } else {
+        $orphans.Add($f)
+        $orphanBytes += $f.Length
+    }
+}
+[long]$allBytes = [long]0
+foreach ($f in (Get-ChildItem -LiteralPath $insDir -Recurse -File -Force -EA SilentlyContinue)) { $allBytes += $f.Length }
+Write-Output ''
+Write-Output '[*] Scan results:'
+Write-Output "    - In use (referenced) : $usedCount file(s), $([math]::Round($usedBytes / 1MB, 1)) MB"
+Write-Output "    - ORPHANED            : $($orphans.Count) file(s), $([math]::Round($orphanBytes / 1MB, 1)) MB"
+Write-Output "    - Whole Installer dir : $([math]::Round($allBytes / 1MB, 1)) MB ($([math]::Round($allBytes / 1GB, 2)) GB)"
+Write-Output ''
+if ($orphans.Count -gt 0) {
+    Write-Output "[*] Orphaned files - top $([math]::Min(30, $orphans.Count)) by size shown (all appear in the picker):"
+    $orphans | Sort-Object Length -Descending | Select-Object -First 30 | ForEach-Object {
+        $mb = [math]::Round($_.Length / 1MB, 1)
+        Write-Output ("    {0,10} MB  {1}" -f $mb, $_.Name)
+    }
+} else {
+    Write-Output '[INFO] No orphaned installer files found - nothing to clean.'
+}
+Write-Output ''
+Write-Output '__SCAN_BEGIN__'
+foreach ($f in $orphans) { Write-Output "$($f.Length)`t$($f.FullName)" }
+Write-Output '__SCAN_END__'
+Write-Output ''
+Write-Output '[SUCCESS] Orphaned installer scan completed.'
+Write-Output '============================================================'
+"""
+
+_MOVE_ORPHANS = r"""Write-Output '============================================================'
+Write-Output ' SA WinTools - Quarantine Selected Installer Files'
+Write-Output '============================================================'
+Write-Output ''
+$quar = '__QUAR__'
+$insDir = Join-Path $env:SystemRoot 'Installer'
+$paths = @'
+__PATHS__
+'@ -split "`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ }
+if (-not $paths) {
+    Write-Output '[ERROR] No files supplied.'
+    Write-Output '============================================================'
+    return
+}
+try {
+    New-Item -ItemType Directory -Path $quar -Force | Out-Null
+} catch {
+    Write-Output "[ERROR] Cannot create quarantine folder '$quar' - $($_.Exception.Message)"
+    Write-Output '============================================================'
+    return
+}
+$manifest = Join-Path $quar 'manifest.log'
+Write-Output "[*] Moving $($paths.Count) file(s) to quarantine: $quar"
+Write-Output ''
+$moved = 0
+$failed = 0
+$skipped = 0
+[long]$totalBytes = [long]0
+foreach ($p in $paths) {
+    if (-not (Test-Path -LiteralPath $p -PathType Leaf)) {
+        Write-Output "[SKIP] Not found (or already moved): $p"
+        $skipped++
+        continue
+    }
+    try {
+        $item = Get-Item -LiteralPath $p -Force -EA Stop
+        $fsize = $item.Length
+        $dest = Join-Path $quar $item.Name
+        if (Test-Path -LiteralPath $dest) {
+            $stamp = Get-Date -Format 'yyyyMMdd_HHmmss'
+            $dest = Join-Path $quar ("{0}_{1}{2}" -f [System.IO.Path]::GetFileNameWithoutExtension($item.Name), $stamp, [System.IO.Path]::GetExtension($item.Name))
+        }
+        Move-Item -LiteralPath $p -Destination $dest -Force -EA Stop
+        $mb = [math]::Round($fsize / 1MB, 1)
+        Write-Output "[OK] Quarantined: $($item.Name) ($mb MB)"
+        "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') | from: $p | to: $dest | size: $fsize bytes" |
+            Out-File -FilePath $manifest -Append -Encoding utf8
+        $totalBytes += $fsize
+        $moved++
+    } catch {
+        Write-Output "[!] Failed: $p - $($_.Exception.Message)"
+        $failed++
+    }
+}
+Write-Output ''
+Write-Output "[*] Pruning empty subfolders in the Installer directory..."
+$pruned = 0
+Get-ChildItem -LiteralPath $insDir -Recurse -Directory -Force -EA SilentlyContinue |
+    Sort-Object { $_.FullName.Length } -Descending |
+    Where-Object { -not (Get-ChildItem -LiteralPath $_.FullName -Force -EA SilentlyContinue | Select-Object -First 1) } |
+    ForEach-Object {
+        try {
+            Remove-Item -LiteralPath $_.FullName -Force -EA Stop
+            Write-Output "[OK] Removed empty folder: $($_.FullName)"
+            $pruned++
+        } catch {}
+    }
+Write-Output ''
+Write-Output '======================================='
+Write-Output ' QUARANTINE SUMMARY'
+Write-Output '======================================='
+Write-Output "  Moved          : $moved"
+Write-Output "  Failed         : $failed"
+Write-Output "  Not found      : $skipped"
+Write-Output "  Empty folders  : $pruned removed"
+Write-Output "  Space saved    : $([math]::Round($totalBytes / 1MB, 1)) MB ($([math]::Round($totalBytes / 1GB, 2)) GB) from the Installer directory"
+Write-Output "  Manifest       : $manifest (original location of every moved file, for manual restore)"
+Write-Output '======================================='
+Write-Output '[SUCCESS] Quarantine completed. Move files back manually if an app ever needs them.'
+Write-Output '============================================================'
+"""
+
+_PURGE_QUARANTINE = r"""Write-Output '============================================================'
+Write-Output ' SA WinTools - Purge Installer Quarantine Folder'
+Write-Output '============================================================'
+Write-Output ''
+$quar = '__QUAR__'
+if (-not (Test-Path -LiteralPath $quar)) {
+    Write-Output "[INFO] Quarantine folder does not exist: $quar"
+    Write-Output '[INFO] Nothing to purge. Run the scan-and-quarantine mode first.'
+    Write-Output '============================================================'
+    return
+}
+$items = Get-ChildItem -LiteralPath $quar -Force -EA SilentlyContinue
+if (-not $items) {
+    Write-Output "[INFO] Quarantine folder is already empty: $quar"
+    Write-Output '============================================================'
+    return
+}
+$fileCount = 0
+[long]$totalBytes = [long]0
+Get-ChildItem -LiteralPath $quar -Recurse -Force -File -EA SilentlyContinue | ForEach-Object {
+    $fileCount++
+    $totalBytes += $_.Length
+}
+Write-Output "[*] Quarantine folder : $quar"
+Write-Output "[*] Contents          : $fileCount file(s), $([math]::Round($totalBytes / 1MB, 1)) MB ($([math]::Round($totalBytes / 1GB, 2)) GB)"
+Write-Output '    (includes manifest.log, which documents the original location of every moved file)'
+Write-Output ''
+$ok = 0
+$failed = 0
+foreach ($item in $items) {
+    try {
+        Remove-Item -LiteralPath $item.FullName -Recurse -Force -EA Stop
+        Write-Output "[OK] Deleted: $($item.Name)"
+        $ok++
+    } catch {
+        Write-Output "[!] Failed: $($item.FullName) - $($_.Exception.Message)"
+        $failed++
+    }
+}
+Write-Output ''
+Write-Output '======================================='
+Write-Output ' PURGE SUMMARY'
+Write-Output '======================================='
+Write-Output "  Deleted       : $ok item(s)"
+Write-Output "  Failed        : $failed item(s)"
+Write-Output "  Space freed   : $([math]::Round($totalBytes / 1MB, 1)) MB"
+Write-Output '======================================='
+Write-Output '[SUCCESS] Quarantine purged.'
+Write-Output '============================================================'
+"""
+
+
 _REMOVE_APPX = r"""Write-Output '============================================================'
 Write-Output ' SA WinTools - Remove Selected Appx Packages'
 Write-Output '============================================================'
@@ -2011,6 +2252,22 @@ CATEGORIES: list[dict] = [
                 ],
             },
             {
+                "name": "Installer Cleanup",
+                "desc": "Finds orphaned .msi/.msp files in the Windows Installer folder "
+                        "and moves them to a quarantine to reclaim space.",
+                "modes": [
+                    {"label": "Scan & Quarantine Orphans...",
+                     "input": {"type": "path_select",
+                               "label": "Select orphaned installer files to quarantine:",
+                               "scan_script": _SCAN_ORPHAN_MSI,
+                               "script": _MOVE_ORPHANS,
+                               "blocklist": False},
+                     "confirm": True},
+                    {"label": "Purge Quarantine Folder",
+                     "script": _PURGE_QUARANTINE, "confirm": True},
+                ],
+            },
+            {
                 "name": "Dev Cache Cleaner",
                 "desc": "Clears package manager caches and removes leftover updater folders.",
                 "modes": [
@@ -2256,4 +2513,5 @@ def resolve_placeholders(script: str) -> str:
             .replace("__LIB__", LIB_PATH)
             .replace("__DISKRESCUE__", DISKRESCUE_PATH)
             .replace("__DISKRESCUE_DATA__", DISKRESCUE_DATA)
+            .replace("__QUAR__", INSTALLER_QUARANTINE)
             .replace("__BACKUP__", BACKUP_ROOT))
